@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FANTASTIC Lifestyle Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      min-height: 100vh;
+    }
+    .chat-container {
+      background: #ffffff;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      border-radius: 16px;
+      margin: 24px;
+      max-width: 900px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(120deg, #2563eb, #4f46e5);
+      color: #ffffff;
+    }
+    .chat-header h1 {
+      font-size: 18px;
+      margin: 0;
+    }
+    .chat-header small {
+      opacity: 0.9;
+    }
+    .chat-body {
+      padding: 16px 20px;
+      overflow-y: auto;
+      flex: 1;
+      background: #f9fafb;
+    }
+    .message {
+      margin-bottom: 12px;
+      max-width: 80%;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .message.user {
+      margin-left: auto;
+      background: #2563eb;
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 16px 16px 2px 16px;
+    }
+    .message.bot {
+      margin-right: auto;
+      background: #ffffff;
+      color: #111827;
+      padding: 10px 14px;
+      border-radius: 16px 16px 16px 2px;
+      border: 1px solid #e5e7eb;
+    }
+    .chat-footer {
+      padding: 10px 16px 14px;
+      border-top: 1px solid #e5e7f0;
+      display: flex;
+      gap: 8px;
+      background: #ffffff;
+    }
+    .chat-footer input {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 10px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-footer input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px #2563eb33;
+    }
+    .chat-footer button {
+      border-radius: 999px;
+      border: none;
+      background: #2563eb;
+      color: #ffffff;
+      padding: 10px 18px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .chat-footer button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .status {
+      font-size: 12px;
+      color: #6b7280;
+      margin-left: 16px;
+    }
+    .session-id {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 4px;
+      cursor: pointer;
+      user-select: all;
+    }
+    .session-id:hover {
+      color: rgba(255, 255, 255, 0.9);
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <div>
+        <h1>FANTASTIC Lifestyle Coach</h1>
+        <small>We'll chat about your daily life and then share some gentle tips.</small>
+        <div class="session-id" id="session-id" style="display: none;" onclick="navigator.clipboard.writeText(this.textContent); alert('Session ID copied!')" title="Click to copy">Session ID: <span id="session-id-value"></span></div>
+      </div>
+      <div class="status" id="status">Collecting lifestyle information…</div>
+    </div>
+    <div class="chat-body" id="chat-body"></div>
+    <div class="chat-footer">
+      <input
+        id="user-input"
+        type="text"
+        placeholder="Type your message…"
+        autocomplete="off"
+      />
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const chatBody = document.getElementById("chat-body");
+    const input = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const statusEl = document.getElementById("status");
+
+    let sessionId = null;
+    let mode = "collecting"; // or "post_results_chat"
+
+    function appendMessage(text, role) {
+      const div = document.createElement("div");
+      div.className = "message " + role;
+      div.textContent = text;
+      chatBody.appendChild(div);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendMessage(text, "user");
+      input.value = "";
+      input.focus();
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            user_message: text,
+            language: "en"
+          })
+        });
+        const data = await res.json();
+        sessionId = data.session_id;
+        mode = data.mode;
+        appendMessage(data.reply, "bot");
+        statusEl.textContent =
+          mode === "collecting"
+            ? "Collecting lifestyle information…"
+            : "Now discussing your results.";
+        
+        // Show session ID
+        if (sessionId) {
+          const sessionIdEl = document.getElementById("session-id");
+          const sessionIdValueEl = document.getElementById("session-id-value");
+          sessionIdValueEl.textContent = sessionId;
+          sessionIdEl.style.display = "block";
+        }
+      } catch (err) {
+        appendMessage(
+          "Sorry, there was a problem talking to the server. Please try again.",
+          "bot"
+        );
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    // Start conversation automatically with a friendly opener
+    window.addEventListener("load", () => {
+      appendMessage(
+        "Hi, I’m a lifestyle coach. I’ll ask a few things about your daily life so I can offer some personalized tips. When you’re ready, say hello or tell me a bit about yourself.",
+        "bot"
+      );
+    });
+  </script>
+</body>
+</html>
+
