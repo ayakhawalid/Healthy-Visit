@@ -4,12 +4,12 @@ This project turns the **FANTASTIC lifestyle questionnaire** into a conversation
 
 ### Features
 
-- ✅ **Phase 1**: Questionnaire structure in JSON with English and Hebrew support
-- ✅ **Phase 2**: Python/FastAPI backend with accurate scoring logic
-- ✅ **Phase 3**: OpenAI integration for personalized lifestyle advice
-- ✅ **Phase 4**: Conversational interface that collects answers naturally (not like a form)
-- ✅ **Phase 5**: LangChain integration for conversation memory
-- ✅ **Phase 6**: Web-based chat UI
+- **Phase 1**: Questionnaire structure in JSON with English and Hebrew support
+- **Phase 2**: Python/FastAPI backend with accurate scoring logic
+- **Phase 3**: OpenAI integration for personalized lifestyle advice
+- **Phase 4**: Conversational interface that collects answers naturally (not like a form)
+- **Phase 5**: LangChain integration for conversation memory
+- **Phase 6**: Web-based chat UI
 
 ### Project Status
 
