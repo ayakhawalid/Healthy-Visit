@@ -17,11 +17,13 @@ env/
 .env.*.local
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
+# Keep .vscode/settings.json but ignore other VS Code files
+.vscode/*
+!.vscode/settings.json
 
 # OS
 .DS_Store
