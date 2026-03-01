@@ -1,0 +1,13 @@
+cryptography
+fastapi
+sqlalchemy
+pydantic
+python-jose
+bcrypt
+uvicorn
+PyMySQL
+python-dotenv>=1.0.1
+openai>=1.54.0
+requests>=2.32.0
+langchain>=0.3.0
+langchain-openai>=0.2.0
