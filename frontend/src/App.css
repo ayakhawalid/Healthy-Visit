@@ -1,21 +1,28 @@
-#root{
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
   min-height: 100%;
   width: 100%;
 }
 
+body {
+  background: #f6f5f7;
+  font-family: "Montserrat", sans-serif;
+  margin: 0;
+}
+
 .App {
+  font-family: "Montserrat", sans-serif;
   text-align: center;
 }
 
 .App-logo {
   height: 40vmin;
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
 }
 
 .App-header {
@@ -29,20 +36,50 @@
   color: white;
 }
 
+.App-header-home {
+  background-color: #ffffff;
+  min-height: calc(100vh - 64px);
+  color: #333;
+}
+
 .App-link {
   color: #61dafb;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.signinpage{
+.signinpage {
   height: 100%;
   width: 100%;
+}
+
+/* Sign-in form on homepage */
+.home-signin-input input {
+  background-color: #eee !important;
+  text-align: left;
+  color: #333;
+}
+
+.home-signin-input .MuiOutlinedInput-notchedOutline {
+  border-color: #eee;
+}
+
+.home-signin-input label.MuiInputLabel-root {
+  color: #444;
+}
+
+.home-signin-button {
+  border-radius: 6px !important;
+  padding: 12px 45px !important;
+  font-size: 1.1rem !important;
+  font-weight: bold !important;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: transform 80ms ease-in;
+}
+
+.home-signin-button:active {
+  transform: scale(0.95);
+}
+
+.home-signin-button:focus {
+  outline: none;
 }
