@@ -83,3 +83,89 @@ body {
 .home-signin-button:focus {
   outline: none;
 }
+
+/* Auth container: full viewport, half green / half white, then slide on sign-up */
+.auth-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  margin: 0;
+}
+
+.auth-panel {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  transition: transform 0.6s ease-in-out;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+.auth-panel-green {
+  left: 0;
+  background: #16a34a;
+  z-index: 2;
+}
+
+.auth-panel-white {
+  left: 50%;
+  background: #fff;
+  color: #333;
+  overflow-y: auto;
+}
+
+.auth-panel-green.auth-panel-slided {
+  transform: translateX(100%);
+}
+
+.auth-panel-white.auth-panel-slided {
+  transform: translateX(-100%);
+}
+
+.auth-form-box {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  padding: 0;
+}
+
+@media (max-width: 768px) {
+  .auth-panel {
+    width: 100%;
+    left: 0 !important;
+  }
+
+  .auth-panel-green.auth-panel-slided {
+    transform: translateX(-100%);
+  }
+
+  .auth-panel-white.auth-panel-slided {
+    transform: translateX(0);
+  }
+}
+
+/* Keep username/password background grey when filled or autofilled */
+.home-signin-input input,
+.signup-input input {
+  background-color: #eee !important;
+}
+
+.home-signin-input input:-webkit-autofill,
+.home-signin-input input:-webkit-autofill:hover,
+.home-signin-input input:-webkit-autofill:focus,
+.signup-input input:-webkit-autofill,
+.signup-input input:-webkit-autofill:hover,
+.signup-input input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px #eee inset !important;
+  box-shadow: 0 0 0 30px #eee inset !important;
+}
