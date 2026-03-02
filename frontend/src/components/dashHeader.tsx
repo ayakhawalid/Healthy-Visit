@@ -30,7 +30,8 @@ export default function PrimarySearchAppBar(props: PrimarySearchAppBarProps) {
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
 
   const [authLoading, setAuthLoading] = React.useState(!userProp);
-  const [authState, setAuthState] = React.useState<boolean | null>(userProp ? userProp.is_superuser ?? true : null);
+  const [authState, setAuthState] = React.useState<boolean | number | null>(userProp ? (userProp.is_superuser ?? true) : null);
+  const [authFailed, setAuthFailed] = React.useState(false);
   const [User, setUser] = React.useState<any>(userProp ?? {});
 
   const theme = createTheme({
@@ -55,7 +56,8 @@ export default function PrimarySearchAppBar(props: PrimarySearchAppBarProps) {
         setAuthLoading(false);
       })
       .catch(() => {
-        window.location.replace("/");
+        setAuthFailed(true);
+        setAuthLoading(false);
       });
   }, [userProp]);
 
@@ -132,6 +134,9 @@ export default function PrimarySearchAppBar(props: PrimarySearchAppBarProps) {
       <MenuItem onClick={signout}>Logout</MenuItem>
     </Menu>
   );
+  if (authFailed) {
+    return <Redirect to="/signin?session=expired" />;
+  }
   if (authLoading) {
     return (
       <Box sx={{ flexGrow: 1 }}>
@@ -146,7 +151,7 @@ export default function PrimarySearchAppBar(props: PrimarySearchAppBarProps) {
       </Box>
     );
   }
-  if (authState === false) {
+  if (authState === false || authState === 0) {
     return <Redirect to="/" />;
   }
   return (

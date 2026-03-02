@@ -1,9 +1,14 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+from database import conn
+from models import Users
+from service.hashing import Hash
 
 from CRUD.authen import auth
 from fantastic.models import (
@@ -28,7 +33,33 @@ origins = [
     "http://127.0.0.1:8080",
 ]
 
-app = FastAPI(docs_url="/api/docs", openapi_url="/api")
+
+def _seed_admin():
+    """Create default admin user (admin / asd123) if no superuser exists."""
+    try:
+        rows = conn.execute(Users.select()).fetchall()
+        has_superuser = any(len(r) > 3 and r[3] for r in rows) if rows else False
+        if not has_superuser:
+            conn.execute(
+                Users.insert().values(
+                    username="admin",
+                    email="admin@example.com",
+                    is_superuser=True,
+                    password=Hash.bcrypt("asd123"),
+                )
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _seed_admin()
+    yield
+
+
+app = FastAPI(docs_url="/api/docs", openapi_url="/api", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth, prefix="/api")
+
 
 # --- FANTASTIC lifestyle questionnaire & chat (no auth; login/signup stay in /api) ---
 BACKEND_DIR = Path(__file__).resolve().parent

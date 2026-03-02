@@ -19,7 +19,7 @@ export const login = async (username: string, password: string) => {
     });
     const data: any = response.data;
     if (data.access_token) {
-      Cookies.set("token", data.access_token);
+      Cookies.set("token", data.access_token, { path: "/" });
       window.location.replace("/dashboard");
     } else {
       alert(data.error || "Login failed");

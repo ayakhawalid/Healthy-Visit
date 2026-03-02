@@ -8,6 +8,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useLocation } from "react-router-dom";
 import { login } from "../service/auth";
 
 const Item = styled(Paper)(({ theme }) => ({
@@ -21,6 +22,14 @@ const Item = styled(Paper)(({ theme }) => ({
 function SignIn() {
     const [user, setUser] = React.useState("");
     const [pass, setPass] = React.useState("");
+    const location = useLocation();
+    const sessionExpired = new URLSearchParams(location.search).get("session") === "expired";
+
+    React.useEffect(() => {
+      if (sessionExpired) {
+        alert("Session expired or could not verify login. Please sign in again. (If the backend is not running on port 9999, start it first.)");
+      }
+    }, [sessionExpired]);
 
     const handleLogin = () => {
       if (!user.trim() || !pass) {

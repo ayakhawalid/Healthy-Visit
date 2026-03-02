@@ -37,9 +37,10 @@ const columns: readonly Column[] = [
 export default function StickyHeadTable() {
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(10);
-  const [Users, setUsers] = React.useState(Array);
+  const [Users, setUsers] = React.useState<any[]>([]);
   const [user, setUser] = React.useState<any>(null);
   const [authLoading, setAuthLoading] = React.useState(true);
+  const [authFailed, setAuthFailed] = React.useState(false);
 
   React.useEffect(() => {
     getUser()
@@ -49,16 +50,16 @@ export default function StickyHeadTable() {
       })
       .catch(() => {
         setAuthLoading(false);
-        window.location.replace("/");
+        setAuthFailed(true);
       });
   }, []);
 
   React.useEffect(() => {
-    if (!user?.is_superuser) return;
+    if (!user || (user.is_superuser !== true && user.is_superuser !== 1)) return;
     fetchAllUsers()
       .then((data: any) => setUsers(data))
       .catch((error) => console.warn(error.message));
-  }, [user?.is_superuser]);
+  }, [user]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -82,6 +83,9 @@ export default function StickyHeadTable() {
     window.location.reload()
   }
 
+  if (authFailed) {
+    return <Redirect to="/signin?session=expired" />;
+  }
   if (authLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
@@ -89,7 +93,7 @@ export default function StickyHeadTable() {
       </Box>
     );
   }
-  if (user && !user.is_superuser) {
+  if (user && !(user.is_superuser === true || user.is_superuser === 1)) {
     return <Redirect to="/" />;
   }
 
