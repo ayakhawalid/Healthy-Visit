@@ -18,12 +18,13 @@ def create_access_token(data: dict):
 def verify_token(token:str,credentials_exception):
 	try:
 		payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+		user_id: int = payload.get("id")
 		username: str = payload.get("username")
 		email: str = payload.get("email")
 		is_superuser: bool = payload.get("is_superuser")
 		if username is None:
 			raise credentials_exception
-		token_data = TokenData(username=username, email=email, is_superuser=is_superuser)
+		token_data = TokenData(id=user_id, username=username, email=email, is_superuser=is_superuser)
 		return token_data
 	except JWTError:
 	    raise credentials_exception

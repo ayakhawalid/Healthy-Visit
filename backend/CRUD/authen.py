@@ -70,7 +70,7 @@ def login(req:OAuth2PasswordRequestForm = Depends()):
         return {"error":f"No user found with this {req.username} username"}
     if not Hash.verify(user[-1],req.password):
         return {"error":"Wrong Username or password"}
-    access_token = create_access_token(data={"username": user[1], "email": user[2], "is_superuser": user[3]})
+    access_token = create_access_token(data={"id": user[0], "username": user[1], "email": user[2], "is_superuser": user[3]})
     return {"access_token": access_token,"token_type": "bearer","id": user[0]}
 
 @auth.get("/verify_token")

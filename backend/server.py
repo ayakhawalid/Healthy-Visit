@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from CRUD.metrics import metrics
 
 from database import conn
 from models import Users
@@ -69,6 +70,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth, prefix="/api")
+app.include_router(metrics, prefix="/api")
 
 
 # --- FANTASTIC lifestyle questionnaire & chat (no auth; login/signup stay in /api) ---

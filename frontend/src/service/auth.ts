@@ -20,10 +20,16 @@ export const login = async (username: string, password: string) => {
     const data: any = response.data;
     if (data.access_token) {
       Cookies.set("token", data.access_token, { path: "/" });
-      window.location.replace("/dashboard");
-    } else {
-      alert(data.error || "Login failed");
+    
+      const user = await getUser();        
+    
+      if (user.is_superuser === true || user.is_superuser === 1) {
+        window.location.replace("/admin-dashboard");          // admin
+      } else {
+        window.location.replace("/patient-dashboard");  // patient
+      }
     }
+   
   } catch (err: any) {
     const msg =
       err.response?.data?.detail ||
