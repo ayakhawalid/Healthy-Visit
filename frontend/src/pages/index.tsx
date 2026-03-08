@@ -2,7 +2,7 @@ import logo from "./../logo.svg";
 import Button from "@mui/material/Button";
 import { logout, getUser, login } from "../service/auth";
 import * as React from "react";
-import { Typography, Box, TextField, Paper, Stack, InputAdornment, IconButton } from "@mui/material";
+import { Typography, Box, TextField, Paper, Stack, InputAdornment, IconButton, Alert } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { Link } from "react-router-dom";
@@ -23,17 +23,15 @@ const inputSx = {
 
 function Index() {
   const [Auth, setAuth] = React.useState(false);
-  const [User, setUser] = React.useState<{ username?: string; is_superuser?: boolean }>({});
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [loginError, setLoginError] = React.useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = React.useState(false);
 
   React.useEffect(() => {
     getUser()
-      .then((data) => {
-        setUser(data);
-        setAuth(true);
-      })
+      .then(() => setAuth(true))
       .catch((error) => {
         console.warn(error.message);
       });
@@ -42,22 +40,36 @@ function Index() {
   const handleLogout = () => {
     logout();
     setAuth(false);
+    window.location.replace("/");
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!username.trim() || !password) {
-      alert("Please enter username and password");
+      setLoginError("Please enter username and password.");
       return;
     }
-    login(username.trim(), password);
+    setLoginError(null);
+    setLoggingIn(true);
+    try {
+      await login(username.trim(), password);
+    } catch (err: any) {
+      setLoginError(err?.message || "Login failed. Please try again.");
+    } finally {
+      setLoggingIn(false);
+    }
   };
 
   return (
     <div className="App" style={{ width: "100%", maxWidth: 480 }}>
       {Auth ? (
-          <Typography variant="h6" color="textSecondary">
-            You're all set.
-          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+            <Typography variant="h6" color="textSecondary">
+              You're all set.
+            </Typography>
+            <Button variant="outlined" onClick={handleLogout} sx={{ borderColor: "#16a34a", color: "#16a34a" }}>
+              Sign out
+            </Button>
+          </Box>
         ) : (
           <>
             <Paper
@@ -73,7 +85,7 @@ function Index() {
               <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", mb: 3 }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                   <img src={logo} alt="logo" style={{ height: 56 }} />
-                  <Typography variant="h4" sx={{ fontFamily: '"Poppins", sans-serif', fontWeight: 600, color: "#16a34a", fontSize: "1.75rem" }}>
+                  <Typography variant="h4" sx={{ fontFamily: "Roboto, sans-serif", fontWeight: 600, color: "#16a34a", fontSize: "1.75rem" }}>
                     Healthy Visit
                   </Typography>
                 </Box>
@@ -84,16 +96,21 @@ function Index() {
                   </Typography>
                 </Box>
               </Box>
-              <Typography variant="h4" gutterBottom sx={{ fontFamily: '"DM Sans", sans-serif', fontWeight: 600, color: "#16a34a", fontSize: "2.75rem", mb: 3, textAlign: "left" }}>
+              <Typography variant="h4" gutterBottom sx={{ fontFamily: "Roboto, sans-serif", fontWeight: 600, color: "#16a34a", fontSize: "2.75rem", mb: 3, textAlign: "left" }}>
                 Welcome back!
               </Typography>
+              {loginError && (
+                <Alert severity="error" onClose={() => setLoginError(null)} sx={{ width: "100%", mb: 2 }}>
+                  {loginError}
+                </Alert>
+              )}
               <Stack spacing={2.5} sx={{ mt: 3 }}>
                 <TextField
                   fullWidth
                   placeholder="Username"
                   variant="outlined"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => { setUsername(e.target.value); setLoginError(null); }}
                   className="signup-input"
                   sx={inputSx}
                 />
@@ -103,7 +120,7 @@ function Index() {
                   placeholder="Password"
                   variant="outlined"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setLoginError(null); }}
                   className="signup-input"
                   sx={inputSx}
                   InputProps={{
@@ -125,6 +142,7 @@ function Index() {
                   fullWidth
                   variant="contained"
                   onClick={handleLogin}
+                  disabled={loggingIn}
                   className="home-signin-button"
                   sx={{
                     bgcolor: "#16a34a",
@@ -139,7 +157,7 @@ function Index() {
                     "&:active": { transform: "scale(0.98)" },
                   }}
                 >
-                  Sign In
+                  {loggingIn ? "Signing in…" : "Sign In"}
                 </Button>
               </Stack>
             </Paper>

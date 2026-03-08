@@ -37,7 +37,8 @@ export const login = async (username: string, password: string) => {
       err.response?.data?.error ||
       err.message ||
       "Login failed";
-    alert(Array.isArray(msg) ? msg.map((m: any) => m.msg || m).join(", ") : msg);
+    const message = Array.isArray(msg) ? msg.map((m: any) => m.msg || m).join(", ") : msg;
+    throw new Error(message);
   }
 };
 

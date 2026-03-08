@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from service.jwttoken import create_access_token
 from service.oauth import get_current_user
@@ -64,14 +64,14 @@ def create_user(req: User):
     return {"message": "User registered successfully"}
 
 @auth.post('/login')
-def login(req:OAuth2PasswordRequestForm = Depends()):
-    user = conn.execute(Users.select().where(Users.c.username == req.username)).fetchone();
+def login(req: OAuth2PasswordRequestForm = Depends()):
+    user = conn.execute(Users.select().where(Users.c.username == req.username)).fetchone()
     if not user:
-        return {"error":f"No user found with this {req.username} username"}
-    if not Hash.verify(user[-1],req.password):
-        return {"error":"Wrong Username or password"}
+        raise HTTPException(status_code=401, detail="No user found with this username.")
+    if not Hash.verify(user[-1], req.password):
+        raise HTTPException(status_code=401, detail="Wrong password.")
     access_token = create_access_token(data={"id": user[0], "username": user[1], "email": user[2], "is_superuser": user[3]})
-    return {"access_token": access_token,"token_type": "bearer","id": user[0]}
+    return {"access_token": access_token, "token_type": "bearer", "id": user[0]}
 
 @auth.get("/verify_token")
 def read_root(current_user:User = Depends(get_current_user)):

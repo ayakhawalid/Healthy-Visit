@@ -46,6 +46,24 @@ class MetricsCreate(BaseModel):
     is_smoking: Optional[bool] = None
 
 
+class MetricsUpdate(BaseModel):
+    date: Optional[date] = None
+    steps: Optional[int] = None
+    sleep: Optional[int] = None
+    score: Optional[float] = None
+    active_minutes: Optional[int] = None
+    nutrition_score: Optional[float] = None
+    alcohol_units: Optional[float] = None
+    stress_score: Optional[float] = None
+    social_support_score: Optional[float] = None
+    cigarettes_per_day: Optional[float] = None
+    mood_score: Optional[float] = None
+    work_satisfaction: Optional[float] = None
+    raw_data: Optional[str] = None
+    sleep_quality: Optional[int] = None
+    is_smoking: Optional[bool] = None
+
+
 class MetricsResponse(BaseModel):
     id: int
     patient_id: int

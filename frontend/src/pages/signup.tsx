@@ -63,18 +63,18 @@ function SignUp() {
         <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", mb: 3 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <img src={logo} alt="logo" style={{ height: 56 }} />
-            <Typography variant="h4" sx={{ fontFamily: '"Poppins", sans-serif', fontWeight: 600, color: "#16a34a", fontSize: "1.75rem" }}>
+            <Typography variant="h4" sx={{ fontFamily: "Roboto, sans-serif", fontWeight: 600, color: "#16a34a", fontSize: "1.75rem" }}>
               Healthy Visit
             </Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, marginTop: "3px" }}>
             <Box sx={{ width: 56, flexShrink: 0 }} />
-            <Typography variant="body1" sx={{ fontFamily: '"Poppins", sans-serif', color: "#666", fontSize: "0.95rem" }}>
+            <Typography variant="body1" sx={{ fontFamily: "Roboto, sans-serif", color: "#666", fontSize: "0.95rem" }}>
               An AI-Driven Virtual Visit
             </Typography>
           </Box>
         </Box>
-        <Typography variant="h4" gutterBottom sx={{ fontFamily: '"DM Sans", sans-serif', fontWeight: 600, color: "#16a34a", fontSize: "2.75rem", mb: 3, textAlign: "left" }}>
+        <Typography variant="h4" gutterBottom sx={{ fontFamily: "Roboto, sans-serif", fontWeight: 600, color: "#16a34a", fontSize: "2.75rem", mb: 3, textAlign: "left" }}>
           Create account
         </Typography>
         <Stack component="form" autoComplete="off" spacing={2.5} sx={{ mt: 3 }}>
