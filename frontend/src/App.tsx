@@ -7,6 +7,9 @@ import SignIn from './pages/signin';
 import SignUp from "./pages/signup";
 import AuthLayout from "./components/AuthLayout";
 import PatientDashboard from "./pages/PatientDashboardPage";
+import ResearcherDashboard from "./pages/ResearcherDashboard";
+import ProfileRedirect from "./pages/ProfileRedirect";
+import Onboarding from "./pages/Onboarding";
 
 function App() {
 
@@ -15,6 +18,9 @@ function App() {
         <Switch>
           <Route path="/admin-dashboard" component={AdminDashboard} />
           <Route path="/patient-dashboard" component={PatientDashboard} />
+          <Route path="/researcher-dashboard" component={ResearcherDashboard} />
+          <Route path="/profile" component={ProfileRedirect} />
+          <Route path="/onboarding" component={Onboarding} />
           <Route path="/signin" component={SignIn} />
           <Route path={["/", "/signup"]}>
             <AuthLayout>

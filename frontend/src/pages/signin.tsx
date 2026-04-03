@@ -33,7 +33,7 @@ function SignIn() {
 
     const handleLogin = () => {
       if (!user.trim() || !pass) {
-        alert("Please enter username and password");
+        alert("Please enter your username or email and password");
         return;
       }
       login(user.trim(), pass);
@@ -67,7 +67,7 @@ function SignIn() {
         <Item>
           <TextField
             sx={{ width: "90%" }}
-            label="Username"
+            label="Username or email"
             variant="outlined"
             size="small"
             value={user}

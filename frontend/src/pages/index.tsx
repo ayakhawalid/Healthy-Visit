@@ -45,7 +45,7 @@ function Index() {
 
   const handleLogin = async () => {
     if (!username.trim() || !password) {
-      setLoginError("Please enter username and password.");
+      setLoginError("Please enter your username or email and password.");
       return;
     }
     setLoginError(null);
@@ -100,14 +100,18 @@ function Index() {
                 Welcome back!
               </Typography>
               {loginError && (
-                <Alert severity="error" onClose={() => setLoginError(null)} sx={{ width: "100%", mb: 2 }}>
+                <Alert
+                  severity="error"
+                  onClose={() => setLoginError(null)}
+                  sx={{ width: "100%", mb: 2 }}
+                >
                   {loginError}
                 </Alert>
               )}
               <Stack spacing={2.5} sx={{ mt: 3 }}>
                 <TextField
                   fullWidth
-                  placeholder="Username"
+                  placeholder="Username or email"
                   variant="outlined"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setLoginError(null); }}

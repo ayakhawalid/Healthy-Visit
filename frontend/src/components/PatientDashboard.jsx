@@ -3,27 +3,25 @@ import {
   Box,
   Card,
   CardContent,
+  CircularProgress,
   Typography,
   Grid,
   Button,
   Container,
-  List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Divider,
   TextField,
   IconButton,
   Alert,
   Stack,
 } from "@mui/material";
-import { ChartPieSlice, ChartBar, PlusCircle, PencilSimple, DeviceMobile, SignOut, Trash, CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { ChartPieSlice, ChartBar, PlusCircle, PencilSimple, DeviceMobile, Trash } from "@phosphor-icons/react";
+import { useHistory, useLocation } from "react-router-dom";
 import { getUser, logout } from "../service/auth";
 import api from "../service/api";
-import logo from "../logo.svg";
-
-const SIDEBAR_WIDTH = 260;
-const SIDEBAR_COLLAPSED_WIDTH = 72;
+import DashboardShell from "./DashboardShell";
+import ProfileFormContent from "./ProfileFormContent";
 
 // Dashboard theme + metric colors (from palette: steps=red, sleep=blue, nutrition=green, mood=orange)
 const theme = {
@@ -32,7 +30,7 @@ const theme = {
   text: "#1F2D3D",
   textMuted: "#868E96",
   bg: "#F8F9FA",
-  cardShadow: "0 1px 2px 0 rgba(31, 45, 61, 0.07)",
+  cardShadow: "0 2px 8px rgba(31, 45, 61, 0.1), 0 1px 2px rgba(31, 45, 61, 0.06)",
   border: "1px solid #DEE2E6",
   logoGreen: "#16a34a",
   metric: {
@@ -89,84 +87,6 @@ function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel
   );
 }
 
-// Multi-segment donut for breakdown (e.g. week 1 / week 2 / week 3)
-function DonutChartSegments({ segments, size = 80, strokeWidth = 10 }) {
-  const total = segments.reduce((s, seg) => s + (seg.value || 0), 0);
-  const r = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = 2 * Math.PI * r;
-  let offset = 0;
-  const parts = total > 0
-    ? segments.map((seg) => {
-        const v = seg.value || 0;
-        const ratio = v / total;
-        const dash = ratio * circumference;
-        const el = (
-          <circle
-            key={seg.label || seg.color}
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={`${dash} ${circumference - dash}`}
-            strokeDashoffset={-offset}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${cx} ${cy})`}
-          />
-        );
-        offset += dash;
-        return el;
-      })
-    : [
-        <circle
-          key="empty"
-          cx={cx}
-          cy={cy}
-          r={r}
-          fill="none"
-          stroke="#E9ECEF"
-          strokeWidth={strokeWidth}
-          transform={`rotate(-90 ${cx} ${cy})`}
-        />,
-      ];
-  return (
-    <svg width={size} height={size} style={{ display: "block" }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#E9ECEF" strokeWidth={strokeWidth} transform={`rotate(-90 ${cx} ${cy})`} />
-      {parts}
-    </svg>
-  );
-}
-
-// Dummy data when backend has no metrics yet (last 7 days for demo)
-function getDummyMetrics(patientId) {
-  const base = new Date();
-  return [0, 1, 2, 3, 4, 5, 6].map((i) => {
-    const d = new Date(base);
-    d.setDate(d.getDate() - (6 - i));
-    const dateStr = d.toISOString().slice(0, 10);
-    return {
-      id: 9000 + i,
-      patient_id: patientId,
-      date: dateStr,
-      steps: 6000 + i * 400,
-      sleep: 6 + (i % 3),
-      sleep_quality: 6 + (i % 4),
-      active_minutes: 20 + i * 5,
-      nutrition_score: 65 + i * 3,
-      alcohol_units: i % 3,
-      stress_score: 5 + (i % 3),
-      social_support_score: 6 + (i % 3),
-      cigarettes_per_day: 0,
-      is_smoking: false,
-      mood_score: 6 + (i % 4),
-      work_satisfaction: 6 + (i % 3),
-    };
-  });
-}
-
 function normalizeRow(row) {
   return {
     ...row,
@@ -183,41 +103,84 @@ function average(rows, field) {
   return sum / values.length;
 }
 
+function emptyTodayRow(patientId) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return normalizeRow({
+    id: -1,
+    patient_id: patientId,
+    date: todayStr,
+    steps: null,
+    sleep: null,
+    sleep_quality: null,
+    active_minutes: null,
+    nutrition_score: null,
+    alcohol_units: null,
+    stress_score: null,
+    social_support_score: null,
+    cigarettes_per_day: null,
+    is_smoking: null,
+    mood_score: null,
+    work_satisfaction: null,
+    score: null,
+  });
+}
+
 export default function PatientDashboard() {
+  const history = useHistory();
+  const location = useLocation();
   const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [metrics, setMetrics] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sidebarView, setSidebarView] = useState("dashboard"); // 'dashboard' | 'add' | 'manage'
+  const [sidebarView, setSidebarView] = useState("dashboard"); // 'dashboard' | 'add' | 'manage' | 'statistics' | 'profile'
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [formValues, setFormValues] = useState({ steps: "", sleep: "", sleep_quality: "", active_minutes: "", nutrition_score: "", stress_score: "", mood_score: "" });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [dailyQ, setDailyQ] = useState(null);
+  const [dailyQLoading, setDailyQLoading] = useState(false);
+  const [dailyQError, setDailyQError] = useState(null);
+  const [dailySubmitting, setDailySubmitting] = useState(false);
+  const [dailyResult, setDailyResult] = useState(null);
+  const [dailyText, setDailyText] = useState("");
 
   // 1) Fetch current user
   useEffect(() => {
     getUser()
       .then((u) => {
+        if (u.is_superuser === true || u.is_superuser === 1) {
+          window.location.replace("/admin-dashboard");
+          return;
+        }
+        if (u.is_researcher === true || u.is_researcher === 1) {
+          window.location.replace("/researcher-dashboard");
+          return;
+        }
         setUser(u);
       })
       .catch((err) => {
         console.warn("Failed to get user", err);
-        setLoading(false);
-      });
+      })
+      .finally(() => setAuthChecked(true));
   }, []);
 
-  const patientId = user?.id != null ? user.id : 1;
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("view") === "profile") {
+      setSidebarView("profile");
+    }
+  }, [location.search]);
+
+  const patientId = user?.id;
 
   const refetchMetrics = () => {
-    if (!user) return;
+    if (patientId == null) return;
     api
       .get("/metrics", { params: { patient_id: patientId } })
       .then((res) => {
         let rows = (res.data || []).map(normalizeRow);
-        if (rows.length === 0) {
-          rows = getDummyMetrics(patientId).map(normalizeRow);
-        }
         rows.sort((a, b) => {
           if (!a.jsDate || !b.jsDate) return 0;
           return a.jsDate.getTime() - b.jsDate.getTime();
@@ -226,20 +189,26 @@ export default function PatientDashboard() {
       })
       .catch((err) => {
         console.warn("Failed to fetch metrics", err);
-        setMetrics(getDummyMetrics(patientId).map(normalizeRow));
+        setMetrics([]);
       });
   };
 
-  // 2) Fetch metrics for this patient when user is known
+  // 2) Ensure today’s metric row exists (partial onboarding / sync), then load metrics
   useEffect(() => {
-    if (!user) return;
+    if (!authChecked) return;
+    if (patientId == null) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     api
-      .get("/metrics", { params: { patient_id: patientId } })
+      .post("/onboarding/sync-dashboard", { patient_id: patientId })
+      .catch((err) => console.warn("sync-dashboard failed", err))
+      .then(() =>
+        api.get("/metrics", { params: { patient_id: patientId } })
+      )
       .then((res) => {
         let rows = (res.data || []).map(normalizeRow);
-        if (rows.length === 0) {
-          rows = getDummyMetrics(patientId).map(normalizeRow);
-        }
         rows.sort((a, b) => {
           if (!a.jsDate || !b.jsDate) return 0;
           return a.jsDate.getTime() - b.jsDate.getTime();
@@ -248,14 +217,37 @@ export default function PatientDashboard() {
       })
       .catch((err) => {
         console.warn("Failed to fetch metrics", err);
-        setMetrics(getDummyMetrics(patientId).map(normalizeRow));
+        setMetrics([]);
       })
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [authChecked, patientId]);
+
+  // 3) Fetch adaptive daily question once we know the user
+  useEffect(() => {
+    if (!user || patientId == null) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    setDailyQLoading(true);
+    setDailyQError(null);
+    api
+      .get("/fantastic/daily-question", { params: { patient_id: patientId, date: todayStr } })
+      .then((res) => setDailyQ(res.data))
+      .catch((err) => setDailyQError(err.response?.data?.detail || err.message || "Failed to load daily question"))
+      .finally(() => setDailyQLoading(false));
+  }, [user, patientId]);
 
   const { today, week1, week2, week3, last21 } = useMemo(() => {
-    if (!metrics.length) {
+    if (patientId == null) {
       return { today: null, week1: [], week2: [], week3: [], last21: [] };
+    }
+    if (!metrics.length) {
+      const placeholder = emptyTodayRow(patientId);
+      return {
+        today: placeholder,
+        week1: [],
+        week2: [],
+        week3: [],
+        last21: [placeholder],
+      };
     }
     const last21 = metrics.slice(-21);
     const today = last21[last21.length - 1] || null;
@@ -263,7 +255,7 @@ export default function PatientDashboard() {
     const week2 = last21.slice(7, 14);
     const week3 = last21.slice(14, 21);
     return { today, week1, week2, week3, last21 };
-  }, [metrics]);
+  }, [metrics, patientId]);
 
   if (loading) {
     return (
@@ -271,44 +263,12 @@ export default function PatientDashboard() {
         sx={{
           minHeight: "100vh",
           bgcolor: theme.bg,
-          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <Box
-          sx={{
-            position: "absolute",
-            top: 16,
-            right: 16,
-            zIndex: 10,
-          }}
-        >
-          <Button
-            variant="outlined"
-            onClick={() => {
-              logout();
-              window.location.replace("/");
-            }}
-            sx={{
-              borderColor: theme.logoGreen,
-              color: theme.logoGreen,
-              "&:hover": { borderColor: theme.logoGreen, bgcolor: "rgba(22, 163, 74, 0.08)" },
-            }}
-          >
-            Sign out
-          </Button>
-        </Box>
-        <Box
-          sx={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Typography variant="h6" sx={{ color: theme.textMuted }}>
-            Loading dashboard…
-          </Typography>
-        </Box>
+        <CircularProgress sx={{ color: theme.textMuted }} />
       </Box>
     );
   }
@@ -319,39 +279,15 @@ export default function PatientDashboard() {
         sx={{
           minHeight: "100vh",
           bgcolor: theme.bg,
-          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: 3,
         }}
       >
-        <Box sx={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
-          <Button
-            variant="outlined"
-            onClick={() => {
-              logout();
-              window.location.replace("/");
-            }}
-            sx={{
-              borderColor: theme.logoGreen,
-              color: theme.logoGreen,
-              "&:hover": { borderColor: theme.logoGreen, bgcolor: "rgba(22, 163, 74, 0.08)" },
-            }}
-          >
-            Sign out
-          </Button>
-        </Box>
-        <Box
-          sx={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            p: 3,
-          }}
-        >
-          <Typography variant="h6" sx={{ color: theme.textMuted }}>
-            No tracking data available yet. Once we collect some data, your dashboard
-            will appear here.
-          </Typography>
-        </Box>
+        <Typography variant="h6" sx={{ color: theme.textMuted }}>
+          Please sign in to view your dashboard.
+        </Typography>
       </Box>
     );
   }
@@ -379,13 +315,8 @@ export default function PatientDashboard() {
   });
 
   const w1 = weekSummary(week1);
-  const w2Raw = weekSummary(week2);
-  const w3Raw = weekSummary(week3);
-  const hasData = (w) => [w.steps, w.sleep, w.nutrition_score, w.mood_score].some((v) => v != null && v !== "");
-  const dummyWeek2 = { steps: 6500, sleep: 6.5, nutrition_score: 72, alcohol_units: 0.5, stress_score: 5.5, mood_score: 6.8 };
-  const dummyWeek3 = { steps: 7100, sleep: 7.2, nutrition_score: 78, alcohol_units: 0.3, stress_score: 5.2, mood_score: 7.1 };
-  const w2 = hasData(w2Raw) ? w2Raw : dummyWeek2;
-  const w3 = hasData(w3Raw) ? w3Raw : dummyWeek3;
+  const w2 = weekSummary(week2);
+  const w3 = weekSummary(week3);
 
   const formatNumber = (n) =>
     typeof n === "number" ? n.toFixed(1).replace(/\.0$/, "") : "—";
@@ -397,8 +328,7 @@ export default function PatientDashboard() {
 
   const cardSx = {
     boxShadow: theme.cardShadow,
-    border: theme.border,
-    borderRadius: 1,
+    borderRadius: 3,
     mb: 2,
   };
   const cardTitleSx = { fontWeight: 600, color: theme.text, mb: 1.5 };
@@ -447,78 +377,26 @@ export default function PatientDashboard() {
       .catch((err) => console.warn(err));
   };
 
-  const sidebarWidth = sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_COLLAPSED_WIDTH;
-
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: theme.bg, width: "100%" }}>
-      {/* Spacer: reserves space for the fixed sidebar so main content sits right beside it */}
-      <Box sx={{ width: sidebarWidth, flexShrink: 0, transition: "width 0.25s ease" }} />
-      {/* Fixed Sidebar - overlays the spacer, stays on scroll */}
-      <Box
-        sx={{
-          position: "fixed",
-          left: 0,
-          top: 0,
-          zIndex: 1100,
-          width: sidebarWidth,
-          height: "100vh",
-          borderRight: theme.border,
-          bgcolor: "#fff",
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: theme.cardShadow,
-          overflow: "hidden",
-          transition: "width 0.25s ease",
-        }}
-      >
-        <Box
-          sx={{
-            p: sidebarOpen ? 1.5 : 1,
-            borderBottom: theme.border,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: sidebarOpen ? "flex-start" : "center",
-            gap: 1,
-            minHeight: 56,
-          }}
-        >
-          {sidebarOpen && (
-            <>
-              <img src={logo} alt="" style={{ height: 36, width: 36, flexShrink: 0 }} />
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="h6" sx={{ color: theme.text, fontWeight: 600, lineHeight: 1.2 }}>
-                  Healthy Visit
-                </Typography>
-                <Typography variant="caption" sx={{ color: theme.textMuted }}>
-                  {user?.username ?? ""}
-                </Typography>
-              </Box>
-              <IconButton
-                size="small"
-                onClick={() => setSidebarOpen(false)}
-                sx={{ flexShrink: 0, color: theme.textMuted }}
-                aria-label="Close sidebar"
-              >
-                <CaretLeft size={20} />
-              </IconButton>
-            </>
-          )}
-          {!sidebarOpen && (
-            <IconButton
-              size="medium"
-              onClick={() => setSidebarOpen(true)}
-              sx={{ color: theme.textMuted }}
-              aria-label="Open sidebar"
-            >
-              <CaretRight size={24} />
-            </IconButton>
-          )}
-        </Box>
-        <List sx={{ py: 1, flex: 1, overflow: "auto" }}>
+    <DashboardShell
+      user={user}
+      sidebarOpen={sidebarOpen}
+      setSidebarOpen={setSidebarOpen}
+      onLogout={handleSignOut}
+      onProfileClick={() => {
+        setSidebarView("profile");
+        history.replace("/patient-dashboard?view=profile");
+      }}
+      profileSelected={sidebarView === "profile"}
+      theme={theme}
+      navItems={
+        <>
           <ListItemButton
             selected={sidebarView === "dashboard"}
-            onClick={() => setSidebarView("dashboard")}
+            onClick={() => {
+              setSidebarView("dashboard");
+              history.replace("/patient-dashboard");
+            }}
             sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -528,7 +406,11 @@ export default function PatientDashboard() {
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "add"}
-            onClick={() => { setSidebarView("add"); setFormError(null); }}
+            onClick={() => {
+              setSidebarView("add");
+              setFormError(null);
+              history.replace("/patient-dashboard");
+            }}
             sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -538,7 +420,10 @@ export default function PatientDashboard() {
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "manage"}
-            onClick={() => setSidebarView("manage")}
+            onClick={() => {
+              setSidebarView("manage");
+              history.replace("/patient-dashboard");
+            }}
             sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -548,7 +433,10 @@ export default function PatientDashboard() {
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "statistics"}
-            onClick={() => setSidebarView("statistics")}
+            onClick={() => {
+              setSidebarView("statistics");
+              history.replace("/patient-dashboard");
+            }}
             sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -569,31 +457,11 @@ export default function PatientDashboard() {
               />
             )}
           </ListItemButton>
-        </List>
-        <Divider sx={{ flexShrink: 0 }} />
-        <List sx={{ flexShrink: 0, py: 1 }}>
-          <ListItemButton onClick={handleSignOut} sx={{ color: theme.logoGreen, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}>
-            <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", color: "inherit", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
-              <SignOut size={22} />
-            </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Logout" />}
-          </ListItemButton>
-        </List>
-      </Box>
-
-      {/* Main content - takes remaining width next to spacer, scrolls independently */}
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: "100vh", overflow: "auto" }}>
+        </>
+      }
+    >
         {sidebarView === "dashboard" && (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Typography component="h1" sx={{ fontSize: { xs: "2rem", md: "2.5rem" }, fontWeight: 300, color: theme.text, mb: 0.5 }}>
-            Health Dashboard
-          </Typography>
-          <Typography variant="body2" sx={{ color: theme.textMuted }}>
-            Your tracking summary from wearables and visits.
-          </Typography>
-        </Box>
-
         {/* Quick stats row with donut charts */}
         <Box sx={{ mb: 4 }}>
           <Typography
@@ -608,6 +476,11 @@ export default function PatientDashboard() {
           >
             Today
           </Typography>
+          {today.score != null && (
+            <Typography variant="body2" sx={{ color: theme.text, mb: 2, fontWeight: 500 }}>
+              FANTASTIC baseline: {Number(today.score).toFixed(1)}%
+            </Typography>
+          )}
           <Grid container spacing={2}>
             <Grid item xs={6} md={3}>
               <Card sx={{ ...cardSx, mb: 0 }}>
@@ -694,6 +567,117 @@ export default function PatientDashboard() {
               </Card>
             </Grid>
           </Grid>
+
+          {/* AI adaptive daily check-in (precision-focused) */}
+          <Card sx={{ ...cardSx, mt: 2, mb: 0 }}>
+            <CardContent>
+              <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2, flexWrap: "wrap" }}>
+                <Box sx={{ minWidth: 240 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.text, mb: 0.25 }}>
+                    Daily check-in
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: theme.textMuted }}>
+                    We ask what needs more precision today (sleep/stress/etc.).
+                  </Typography>
+                </Box>
+                {dailyResult && (
+                  <Box sx={{ textAlign: "right" }}>
+                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
+                      Updated score
+                    </Typography>
+                    <Typography variant="h6" sx={{ color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>
+                      {dailyResult.percentage.toFixed(1)}%
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: theme.textMuted }}>
+                      {dailyResult.grade_label}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+
+              {dailyQError && (
+                <Alert severity="error" sx={{ mt: 2 }} onClose={() => setDailyQError(null)}>
+                  {dailyQError}
+                </Alert>
+              )}
+
+              {dailyQLoading ? (
+                <Typography variant="body2" sx={{ color: theme.textMuted, mt: 2 }}>
+                  Loading today’s question…
+                </Typography>
+              ) : dailyQ ? (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="caption" sx={{ color: theme.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>
+                    {dailyQ.domain}
+                  </Typography>
+                  <Typography variant="body1" sx={{ color: theme.text, fontWeight: 600, mt: 0.5 }}>
+                    {dailyQ.question_text}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mt: 0.5 }}>
+                    {dailyQ.reason}
+                  </Typography>
+
+                  <Box
+                    component="form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const msg = (dailyText || "").trim();
+                      if (!msg) {
+                        setDailyQError("Please type a short answer (e.g., 'ok', 'amazing', 'not great').");
+                        return;
+                      }
+                      setDailySubmitting(true);
+                      setDailyQError(null);
+                      const todayStr = new Date().toISOString().slice(0, 10);
+                      api
+                        .post("/fantastic/daily-answer-free-text", {
+                          patient_id: patientId,
+                          date: todayStr,
+                          question_id: dailyQ.question_id,
+                          user_message: msg,
+                        })
+                        .then((res) => {
+                          setDailyResult(res.data);
+                          setDailyText("");
+                          refetchMetrics();
+                        })
+                        .catch((err) => {
+                          setDailyQError(err.response?.data?.detail || err.message || "Failed to submit answer");
+                        })
+                        .finally(() => setDailySubmitting(false));
+                    }}
+                    sx={{ mt: 2, display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}
+                  >
+                    <TextField
+                      value={dailyText}
+                      onChange={(e) => setDailyText(e.target.value)}
+                      placeholder="Type your answer…"
+                      size="small"
+                      fullWidth
+                      sx={{ flex: 1, minWidth: 220 }}
+                      disabled={dailySubmitting}
+                    />
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={dailySubmitting}
+                      sx={{ bgcolor: theme.primary, "&:hover": { bgcolor: theme.primary } }}
+                    >
+                      {dailySubmitting ? "Sending…" : "Send"}
+                    </Button>
+                  </Box>
+
+                  <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mt: 1 }}>
+                    Examples: “ok”, “amazing”, “not great”, “kept waking up”, “very stressed”.
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography variant="body2" sx={{ color: theme.textMuted, mt: 2 }}>
+                  No question available.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
         </Box>
 
         <Grid container spacing={3}>
@@ -1157,7 +1141,9 @@ export default function PatientDashboard() {
             )}
           </Container>
         )}
-      </Box>
-    </Box>
+        {sidebarView === "profile" && (
+          <ProfileFormContent embedded accentPrimary={theme.primary} />
+        )}
+    </DashboardShell>
   );
 }

@@ -7,9 +7,10 @@ meta = MetaData()
 
 Users = Table('Users', meta,
     Column('id', Integer, unique=True, primary_key=True),
-    Column('username',String),
-    Column('email', String),
+    Column('username', String),
+    Column('email', String, unique=True),
     Column('is_superuser',Boolean),
+    Column('is_researcher', Boolean, nullable=False, default=False),
     Column('password', String),
 )
 
@@ -30,6 +31,44 @@ DailyMetrics = Table('DailyMetrics', meta,
     Column('is_smoking', Boolean, nullable=True),
     Column('mood_score', Float, nullable=True),
     Column('work_satisfaction', Float, nullable=True) 
+)
+
+# Stores generic patient info collected in onboarding.
+PatientProfile = Table('PatientProfile', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('height_cm', Float, nullable=True),
+    Column('weight_kg', Float, nullable=True),
+    Column('onboarding_completed', Boolean, nullable=False, default=False),
+    Column('study_start_date', Date, nullable=True),
+)
+
+# --- FANTASTIC AI tracking persistence ---
+# Stores the latest selected option index for each FANTASTIC question per patient.
+FantasticLatestAnswers = Table('FantasticLatestAnswers', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('question_id', String, nullable=False),
+    Column('selected_index', Integer, nullable=False),
+)
+
+# Stores the daily check-in answer that the AI asked today (auditable history).
+FantasticDailyCheckins = Table('FantasticDailyCheckins', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('date', Date, nullable=False),
+    Column('question_id', String, nullable=False),
+    Column('selected_index', Integer, nullable=False),
+)
+
+# Stores the computed daily FANTASTIC score snapshot.
+FantasticDailyScores = Table('FantasticDailyScores', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('date', Date, nullable=False),
+    Column('percentage', Float, nullable=False),
+    Column('grade_label', String, nullable=False),
+    Column('domains_json', String, nullable=True),
 )
 
 meta.create_all(engine)

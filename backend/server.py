@@ -1,17 +1,24 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from CRUD.metrics import metrics
+from CRUD.fantastic import fantastic
+from CRUD.profile import profile
+from CRUD.onboarding_chat import onboarding
+from CRUD.research import research
 
 from database import conn
 from models import Users
 from service.hashing import Hash
 
-from CRUD.authen import auth
+from CRUD.authen import auth, register_researcher_account
+from schemas import ResearcherCreate
+from service.jwttoken import TokenData
+from service.oauth import require_superuser
 from fantastic.models import (
     ChatRequest,
     ChatResponse,
@@ -46,6 +53,7 @@ def _seed_admin():
                     username="admin",
                     email="admin@example.com",
                     is_superuser=True,
+                    is_researcher=False,
                     password=Hash.bcrypt("asd123"),
                 )
             )
@@ -60,7 +68,40 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(docs_url="/api/docs", openapi_url="/api", lifespan=lifespan)
+# openapi_url must not be "/api" — that would reserve GET /api and is easy to confuse with /api/* routes.
+app = FastAPI(docs_url="/api/docs", openapi_url="/openapi.json", lifespan=lifespan)
+
+_HEALTH_PAYLOAD = {
+    "ok": True,
+    "service": "healthy-visit-api",
+    "tag": "hv-health-v2",
+}
+
+
+@app.get("/health")
+def health_root():
+    """Prefer this URL in the browser — no /api prefix, cannot clash with include_router(..., '/api')."""
+    return _HEALTH_PAYLOAD
+
+
+@app.get("/api/health")
+def api_health():
+    """Same payload as GET /health (for clients that expect /api/...)."""
+    return _HEALTH_PAYLOAD
+
+
+@app.get("/")
+def root():
+    """Without this, GET / returns FastAPI's generic 404 JSON — confusing in the browser."""
+    return {
+        "service": "healthy-visit-api",
+        "message": "Backend is running. Open /health (simplest) or /api/health or /api/docs.",
+        "health": "/health",
+        "health_api_prefix": "/api/health",
+        "openapi_json": "/openapi.json",
+        "docs": "/api/docs",
+    }
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +112,19 @@ app.add_middleware(
 )
 app.include_router(auth, prefix="/api")
 app.include_router(metrics, prefix="/api")
+app.include_router(fantastic, prefix="/api")
+app.include_router(profile, prefix="/api")
+app.include_router(onboarding, prefix="/api")
+app.include_router(research, prefix="/api")
+
+
+@app.post("/api/create-researcher")
+def create_researcher_on_app(
+    req: ResearcherCreate,
+    _: TokenData = Depends(require_superuser),
+):
+    """Same as POST /api/register-researcher but registered on the app (avoids rare router/import 404s)."""
+    return register_researcher_account(req)
 
 
 # --- FANTASTIC lifestyle questionnaire & chat (no auth; login/signup stay in /api) ---
@@ -183,4 +237,5 @@ def chat(request: ChatRequest) -> ChatResponse:
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="localhost", reload=True, port=9999)
+    print("Healthy Visit backend — open http://127.0.0.1:9999/health  (tag hv-health-v2)")
+    uvicorn.run("server:app", host="0.0.0.0", reload=True, port=9999)

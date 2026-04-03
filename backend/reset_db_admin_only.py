@@ -16,6 +16,7 @@ def main():
             username="admin",
             email="admin@example.com",
             is_superuser=True,
+            is_researcher=False,
             password=Hash.bcrypt("asd123"),
         )
     )
