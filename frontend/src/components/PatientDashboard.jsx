@@ -15,8 +15,25 @@ import {
   IconButton,
   Alert,
   Stack,
+  Divider,
 } from "@mui/material";
-import { ChartPieSlice, ChartBar, PlusCircle, PencilSimple, DeviceMobile, Trash } from "@phosphor-icons/react";
+import Send from "@mui/icons-material/Send";
+import { alpha } from "@mui/material/styles";
+import {
+  ChartPieSlice,
+  ChartBar,
+  PlusCircle,
+  PencilSimple,
+  DeviceMobile,
+  Trash,
+  Sneaker,
+  MoonStars,
+  ForkKnife,
+  Cigarette,
+  Brain,
+  Smiley,
+} from "@phosphor-icons/react";
+import DailyCheckinCalendar from "./DailyCheckinCalendar";
 import { useHistory, useLocation } from "react-router-dom";
 import { getUser, logout } from "../service/auth";
 import api from "../service/api";
@@ -39,7 +56,45 @@ const theme = {
     nutrition: "#16a34a", // logo green
     mood: "#F1BB55",     // orange from palette
   },
+  /** Snapshot grid cards — icons align with donuts where possible */
+  snapshotIcon: {
+    smoking: "#C2410C",
+    stressSocial: "#6366F1",
+  },
 };
+
+/** Demo values for the four “Today” donut rings only — swap to `today.*` when metrics are wired */
+const DEMO_DONUT_TODAY = {
+  steps: 6840,
+  sleep: 6.5,
+  nutrition: 78,
+  mood: 7,
+};
+
+/** Colored duotone icon + title for the six “Today’s snapshot” cards */
+function SnapshotCardHeader({ Icon, iconColor, title }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 1.5 }}>
+      <Box
+        sx={{
+          width: 44,
+          height: 44,
+          borderRadius: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          bgcolor: alpha(iconColor, 0.14),
+        }}
+      >
+        <Icon size={24} weight="duotone" color={iconColor} />
+      </Box>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.text, mb: 0, lineHeight: 1.3 }}>
+        {title}
+      </Typography>
+    </Box>
+  );
+}
 
 // Donut chart: value vs max (0–1), or multi-segment for breakdown. Optional centerLabel shows text inside.
 function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel }) {
@@ -145,6 +200,8 @@ export default function PatientDashboard() {
   const [dailySubmitting, setDailySubmitting] = useState(false);
   const [dailyResult, setDailyResult] = useState(null);
   const [dailyText, setDailyText] = useState("");
+  const [checkinDateStr, setCheckinDateStr] = useState(() => new Date().toISOString().slice(0, 10));
+  const [lastSubmittedMessage, setLastSubmittedMessage] = useState(null);
 
   // 1) Fetch current user
   useEffect(() => {
@@ -222,18 +279,19 @@ export default function PatientDashboard() {
       .finally(() => setLoading(false));
   }, [authChecked, patientId]);
 
-  // 3) Fetch adaptive daily question once we know the user
+  // 3) Fetch adaptive daily question for the date selected in the check-in calendar
   useEffect(() => {
     if (!user || patientId == null) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
     setDailyQLoading(true);
     setDailyQError(null);
+    setDailyResult(null);
+    setLastSubmittedMessage(null);
     api
-      .get("/fantastic/daily-question", { params: { patient_id: patientId, date: todayStr } })
+      .get("/fantastic/daily-question", { params: { patient_id: patientId, date: checkinDateStr } })
       .then((res) => setDailyQ(res.data))
       .catch((err) => setDailyQError(err.response?.data?.detail || err.message || "Failed to load daily question"))
       .finally(() => setDailyQLoading(false));
-  }, [user, patientId]);
+  }, [user, patientId, checkinDateStr]);
 
   const { today, week1, week2, week3, last21 } = useMemo(() => {
     if (patientId == null) {
@@ -292,19 +350,6 @@ export default function PatientDashboard() {
     );
   }
 
-  const overall = {
-    steps: average(last21, "steps"),
-    sleep: average(last21, "sleep"),
-    sleep_quality: average(last21, "sleep_quality"),
-    nutrition_score: average(last21, "nutrition_score"),
-    alcohol_units: average(last21, "alcohol_units"),
-    stress_score: average(last21, "stress_score"),
-    social_support_score: average(last21, "social_support_score"),
-    cigarettes_per_day: average(last21, "cigarettes_per_day"),
-    mood_score: average(last21, "mood_score"),
-    work_satisfaction: average(last21, "work_satisfaction"),
-  };
-
   const weekSummary = (rows) => ({
     steps: average(rows, "steps"),
     sleep: average(rows, "sleep"),
@@ -317,6 +362,20 @@ export default function PatientDashboard() {
   const w1 = weekSummary(week1);
   const w2 = weekSummary(week2);
   const w3 = weekSummary(week3);
+
+  /** Last-21-days averages — used by Statistics and any summary donuts */
+  const overall = {
+    steps: average(last21, "steps"),
+    sleep: average(last21, "sleep"),
+    sleep_quality: average(last21, "sleep_quality"),
+    nutrition_score: average(last21, "nutrition_score"),
+    alcohol_units: average(last21, "alcohol_units"),
+    stress_score: average(last21, "stress_score"),
+    social_support_score: average(last21, "social_support_score"),
+    cigarettes_per_day: average(last21, "cigarettes_per_day"),
+    mood_score: average(last21, "mood_score"),
+    work_satisfaction: average(last21, "work_satisfaction"),
+  };
 
   const formatNumber = (n) =>
     typeof n === "number" ? n.toFixed(1).replace(/\.0$/, "") : "—";
@@ -331,7 +390,69 @@ export default function PatientDashboard() {
     borderRadius: 3,
     mb: 2,
   };
+  /** Six snapshot metric cards — lift off the page slightly */
+  const snapshotCardSx = {
+    ...cardSx,
+    mb: 0,
+    boxShadow: "0 6px 20px rgba(31, 45, 61, 0.1), 0 2px 8px rgba(31, 45, 61, 0.06)",
+    border: "1px solid rgba(31, 45, 61, 0.06)",
+  };
   const cardTitleSx = { fontWeight: 600, color: theme.text, mb: 1.5 };
+  /** Today row — four donut stats: no card chrome, smaller label/value */
+  const donutRowCardSx = { bgcolor: "transparent", boxShadow: "none", mb: 0 };
+  const donutRowCardContentSx = {
+    py: 2,
+    px: 0.5,
+    bgcolor: "transparent",
+    "&:last-child": { pb: 2 },
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  };
+  const donutRowLabelSx = { color: theme.textMuted, display: "block", mb: 0.25, fontSize: "0.875rem" };
+  const donutRowValueSx = { color: theme.text, fontWeight: 600, fontSize: "1.25rem", lineHeight: 1.25 };
+
+  const CHAT_ASSISTANT_BG = "#E8ECF0";
+  /** Same hue as theme.logoGreen (#16a34a), low alpha — soft “You” bubble */
+  const CHAT_USER_BG = "rgba(22, 163, 74, 0.14)";
+  const CHAT_SCORE_BG = "#BBF7D0";
+  const chatBubbleShadow = "0 2px 10px rgba(31, 45, 61, 0.08), 0 1px 3px rgba(31, 45, 61, 0.05)";
+  const chatBubbleAssistantSx = {
+    alignSelf: "flex-start",
+    maxWidth: "88%",
+    ml: 0.5,
+    bgcolor: CHAT_ASSISTANT_BG,
+    color: theme.text,
+    borderRadius: "2px 14px 14px 14px",
+    px: 1.5,
+    py: 1.15,
+    boxShadow: chatBubbleShadow,
+  };
+  const chatBubbleUserSx = {
+    alignSelf: "flex-end",
+    maxWidth: "88%",
+    mr: 0.5,
+    bgcolor: CHAT_USER_BG,
+    color: theme.text,
+    borderRadius: "2px 4px 14px 14px",
+    px: 1.5,
+    py: 1.15,
+    textAlign: "left",
+    boxShadow: chatBubbleShadow,
+  };
+  const chatBubbleScoreSx = {
+    alignSelf: "flex-end",
+    maxWidth: "88%",
+    mr: 0.5,
+    bgcolor: CHAT_SCORE_BG,
+    color: theme.text,
+    borderRadius: "2px 4px 14px 14px",
+    px: 1.5,
+    py: 1.15,
+    textAlign: "right",
+    boxShadow: chatBubbleShadow,
+  };
 
   const handleAddMetric = (e) => {
     e?.preventDefault();
@@ -461,7 +582,31 @@ export default function PatientDashboard() {
       }
     >
         {sidebarView === "dashboard" && (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", lg: "row" },
+          width: "100%",
+          alignItems: "stretch",
+          flex: 1,
+          minHeight: 0,
+          bgcolor: theme.bg,
+          /* lg: lock row to viewport so only the main column scrolls; right panel stays fixed full-height */
+          height: { xs: "auto", lg: "100vh" },
+          maxHeight: { xs: "none", lg: "100vh" },
+          overflow: { xs: "visible", lg: "hidden" },
+        }}
+      >
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflowY: "auto",
+            height: { lg: "100%" },
+          }}
+        >
+      <Container maxWidth="lg" sx={{ pb: 4, pt: 2 }}>
         {/* Quick stats row with donut charts */}
         <Box sx={{ mb: 4 }}>
           <Typography
@@ -472,236 +617,106 @@ export default function PatientDashboard() {
               textTransform: "uppercase",
               letterSpacing: 1,
               mb: 1.5,
+              mt: 0,
             }}
           >
             Today
           </Typography>
-          {today.score != null && (
-            <Typography variant="body2" sx={{ color: theme.text, mb: 2, fontWeight: 500 }}>
-              FANTASTIC baseline: {Number(today.score).toFixed(1)}%
-            </Typography>
-          )}
           <Grid container spacing={2}>
             <Grid item xs={6} md={3}>
-              <Card sx={{ ...cardSx, mb: 0 }}>
-                <CardContent sx={{ py: 3, "&:last-child": { pb: 3 }, display: "flex", alignItems: "center", justifyContent: "center", gap: 2.5 }}>
+              <Card elevation={0} sx={donutRowCardSx}>
+                <CardContent sx={donutRowCardContentSx}>
                   <DonutChart
-                    value={today.steps}
+                    value={DEMO_DONUT_TODAY.steps}
                     max={10000}
                     color={theme.metric.steps}
                     size={100}
-                    strokeWidth={10}
+                    strokeWidth={15}
                   />
                   <Box>
-                    <Typography variant="body1" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
+                    <Typography component="div" sx={donutRowLabelSx}>
                       Steps
                     </Typography>
-                    <Typography variant="h4" sx={{ color: theme.text, fontWeight: 600 }}>
-                      {today.steps ?? "—"}
+                    <Typography component="div" sx={donutRowValueSx}>
+                      {DEMO_DONUT_TODAY.steps}
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card sx={{ ...cardSx, mb: 0 }}>
-                <CardContent sx={{ py: 3, "&:last-child": { pb: 3 }, display: "flex", alignItems: "center", justifyContent: "center", gap: 2.5 }}>
+              <Card elevation={0} sx={donutRowCardSx}>
+                <CardContent sx={donutRowCardContentSx}>
                   <DonutChart
-                    value={today.sleep}
+                    value={DEMO_DONUT_TODAY.sleep}
                     max={8}
                     color={theme.metric.sleep}
                     size={100}
-                    strokeWidth={10}
+                    strokeWidth={15}
                   />
                   <Box>
-                    <Typography variant="body1" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
+                    <Typography component="div" sx={donutRowLabelSx}>
                       Sleep (h)
                     </Typography>
-                    <Typography variant="h4" sx={{ color: theme.text, fontWeight: 600 }}>
-                      {today.sleep ?? "—"}
+                    <Typography component="div" sx={donutRowValueSx}>
+                      {DEMO_DONUT_TODAY.sleep}
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card sx={{ ...cardSx, mb: 0 }}>
-                <CardContent sx={{ py: 3, "&:last-child": { pb: 3 }, display: "flex", alignItems: "center", justifyContent: "center", gap: 2.5 }}>
+              <Card elevation={0} sx={donutRowCardSx}>
+                <CardContent sx={donutRowCardContentSx}>
                   <DonutChart
-                    value={today.nutrition_score}
+                    value={DEMO_DONUT_TODAY.nutrition}
                     max={100}
                     color={theme.metric.nutrition}
                     size={100}
-                    strokeWidth={10}
+                    strokeWidth={15}
                   />
                   <Box>
-                    <Typography variant="body1" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
+                    <Typography component="div" sx={donutRowLabelSx}>
                       Nutrition
                     </Typography>
-                    <Typography variant="h4" sx={{ color: theme.text, fontWeight: 600 }}>
-                      {today.nutrition_score ?? "—"}
+                    <Typography component="div" sx={donutRowValueSx}>
+                      {DEMO_DONUT_TODAY.nutrition}
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card sx={{ ...cardSx, mb: 0 }}>
-                <CardContent sx={{ py: 3, "&:last-child": { pb: 3 }, display: "flex", alignItems: "center", justifyContent: "center", gap: 2.5 }}>
+              <Card elevation={0} sx={donutRowCardSx}>
+                <CardContent sx={donutRowCardContentSx}>
                   <DonutChart
-                    value={today.mood_score}
+                    value={DEMO_DONUT_TODAY.mood}
                     max={10}
                     color={theme.metric.mood}
                     size={100}
-                    strokeWidth={10}
+                    strokeWidth={15}
                   />
                   <Box>
-                    <Typography variant="body1" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
+                    <Typography component="div" sx={donutRowLabelSx}>
                       Mood
                     </Typography>
-                    <Typography variant="h4" sx={{ color: theme.text, fontWeight: 600 }}>
-                      {today.mood_score ?? "—"}
+                    <Typography component="div" sx={donutRowValueSx}>
+                      {DEMO_DONUT_TODAY.mood}
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
           </Grid>
-
-          {/* AI adaptive daily check-in (precision-focused) */}
-          <Card sx={{ ...cardSx, mt: 2, mb: 0 }}>
-            <CardContent>
-              <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2, flexWrap: "wrap" }}>
-                <Box sx={{ minWidth: 240 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.text, mb: 0.25 }}>
-                    Daily check-in
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                    We ask what needs more precision today (sleep/stress/etc.).
-                  </Typography>
-                </Box>
-                {dailyResult && (
-                  <Box sx={{ textAlign: "right" }}>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Updated score
-                    </Typography>
-                    <Typography variant="h6" sx={{ color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>
-                      {dailyResult.percentage.toFixed(1)}%
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>
-                      {dailyResult.grade_label}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-
-              {dailyQError && (
-                <Alert severity="error" sx={{ mt: 2 }} onClose={() => setDailyQError(null)}>
-                  {dailyQError}
-                </Alert>
-              )}
-
-              {dailyQLoading ? (
-                <Typography variant="body2" sx={{ color: theme.textMuted, mt: 2 }}>
-                  Loading today’s question…
-                </Typography>
-              ) : dailyQ ? (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" sx={{ color: theme.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>
-                    {dailyQ.domain}
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: theme.text, fontWeight: 600, mt: 0.5 }}>
-                    {dailyQ.question_text}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mt: 0.5 }}>
-                    {dailyQ.reason}
-                  </Typography>
-
-                  <Box
-                    component="form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const msg = (dailyText || "").trim();
-                      if (!msg) {
-                        setDailyQError("Please type a short answer (e.g., 'ok', 'amazing', 'not great').");
-                        return;
-                      }
-                      setDailySubmitting(true);
-                      setDailyQError(null);
-                      const todayStr = new Date().toISOString().slice(0, 10);
-                      api
-                        .post("/fantastic/daily-answer-free-text", {
-                          patient_id: patientId,
-                          date: todayStr,
-                          question_id: dailyQ.question_id,
-                          user_message: msg,
-                        })
-                        .then((res) => {
-                          setDailyResult(res.data);
-                          setDailyText("");
-                          refetchMetrics();
-                        })
-                        .catch((err) => {
-                          setDailyQError(err.response?.data?.detail || err.message || "Failed to submit answer");
-                        })
-                        .finally(() => setDailySubmitting(false));
-                    }}
-                    sx={{ mt: 2, display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}
-                  >
-                    <TextField
-                      value={dailyText}
-                      onChange={(e) => setDailyText(e.target.value)}
-                      placeholder="Type your answer…"
-                      size="small"
-                      fullWidth
-                      sx={{ flex: 1, minWidth: 220 }}
-                      disabled={dailySubmitting}
-                    />
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      disabled={dailySubmitting}
-                      sx={{ bgcolor: theme.primary, "&:hover": { bgcolor: theme.primary } }}
-                    >
-                      {dailySubmitting ? "Sending…" : "Send"}
-                    </Button>
-                  </Box>
-
-                  <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mt: 1 }}>
-                    Examples: “ok”, “amazing”, “not great”, “kept waking up”, “very stressed”.
-                  </Typography>
-                </Box>
-              ) : (
-                <Typography variant="body2" sx={{ color: theme.textMuted, mt: 2 }}>
-                  No question available.
-                </Typography>
-              )}
-            </CardContent>
-          </Card>
         </Box>
 
-        <Grid container spacing={3}>
-          {/* Left: daily detail cards */}
-          <Grid item xs={12} lg={8}>
-            <Typography
-              variant="caption"
-              sx={{
-                display: "block",
-                color: theme.textMuted,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                mb: 1.5,
-              }}
-            >
-              Today&apos;s snapshot ({today.date})
-            </Typography>
-            <Grid container spacing={2}>
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <Grid container spacing={1}>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Activity
-                    </Typography>
+                    <SnapshotCardHeader Icon={Sneaker} iconColor={theme.metric.steps} title="Activity" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Steps: {today.steps ?? "—"}
                     </Typography>
@@ -712,11 +727,9 @@ export default function PatientDashboard() {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Sleep
-                    </Typography>
+                    <SnapshotCardHeader Icon={MoonStars} iconColor={theme.metric.sleep} title="Sleep" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Hours: {today.sleep ?? "—"}
                     </Typography>
@@ -727,11 +740,9 @@ export default function PatientDashboard() {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Nutrition & Alcohol
-                    </Typography>
+                    <SnapshotCardHeader Icon={ForkKnife} iconColor={theme.metric.nutrition} title="Nutrition & Alcohol" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Nutrition score: {today.nutrition_score ?? "—"}
                     </Typography>
@@ -742,11 +753,9 @@ export default function PatientDashboard() {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Smoking
-                    </Typography>
+                    <SnapshotCardHeader Icon={Cigarette} iconColor={theme.snapshotIcon.smoking} title="Smoking" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Cigarettes/day: {today.cigarettes_per_day ?? "—"}
                     </Typography>
@@ -762,11 +771,9 @@ export default function PatientDashboard() {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Stress & Social
-                    </Typography>
+                    <SnapshotCardHeader Icon={Brain} iconColor={theme.snapshotIcon.stressSocial} title="Stress & Social" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Stress: {today.stress_score ?? "—"}
                     </Typography>
@@ -777,11 +784,9 @@ export default function PatientDashboard() {
                 </Card>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Card sx={cardSx}>
+                <Card sx={snapshotCardSx}>
                   <CardContent>
-                    <Typography variant="subtitle1" sx={cardTitleSx}>
-                      Mood & Work
-                    </Typography>
+                    <SnapshotCardHeader Icon={Smiley} iconColor={theme.metric.mood} title="Mood & Work" />
                     <Typography variant="body2" sx={{ color: theme.textMuted }}>
                       Mood: {today.mood_score ?? "—"}
                     </Typography>
@@ -793,93 +798,160 @@ export default function PatientDashboard() {
               </Grid>
             </Grid>
           </Grid>
-
-          {/* Right: weekly summaries */}
-          <Grid item xs={12} lg={4}>
-            <Typography
-              variant="caption"
-              sx={{
-                display: "block",
-                color: theme.textMuted,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                mb: 1.5,
-              }}
-            >
-              Weekly summaries (last 3 weeks)
-            </Typography>
-            {[
-              { label: "Week 1", data: w1 },
-              { label: "Week 2", data: w2 },
-              { label: "Week 3", data: w3 },
-            ].map(({ label, data }) => (
-              <Card key={label} sx={cardSx}>
-                <CardContent>
-                  <Typography variant="subtitle1" sx={cardTitleSx}>
-                    {label}
-                  </Typography>
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, flexWrap: "wrap" }}>
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                      <DonutChart value={data.steps} max={10000} color={theme.metric.steps} size={64} strokeWidth={7} centerLabel={formatNumber(data.steps)} />
-                      <Typography variant="caption" sx={{ color: theme.textMuted }}>Steps</Typography>
-                    </Box>
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                      <DonutChart value={data.sleep} max={8} color={theme.metric.sleep} size={64} strokeWidth={7} centerLabel={formatNumber(data.sleep)} />
-                      <Typography variant="caption" sx={{ color: theme.textMuted }}>Sleep</Typography>
-                    </Box>
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                      <DonutChart value={data.nutrition_score} max={100} color={theme.metric.nutrition} size={64} strokeWidth={7} centerLabel={formatNumber(data.nutrition_score)} />
-                      <Typography variant="caption" sx={{ color: theme.textMuted }}>Nutrition</Typography>
-                    </Box>
-                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                      <DonutChart value={data.mood_score} max={10} color={theme.metric.mood} size={64} strokeWidth={7} centerLabel={formatNumber(data.mood_score)} />
-                      <Typography variant="caption" sx={{ color: theme.textMuted }}>Mood</Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
-            <Card sx={cardSx}>
-              <CardContent>
-                <Typography variant="subtitle1" sx={cardTitleSx}>
-                  3-week summary
-                </Typography>
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, mb: 2, flexWrap: "wrap" }}>
-                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                    <DonutChart value={overall.steps} max={10000} color={theme.metric.steps} size={64} strokeWidth={7} centerLabel={formatNumber(overall.steps)} />
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>Steps</Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                    <DonutChart value={overall.sleep} max={8} color={theme.metric.sleep} size={64} strokeWidth={7} centerLabel={formatNumber(overall.sleep)} />
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>Sleep</Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                    <DonutChart value={overall.nutrition_score} max={100} color={theme.metric.nutrition} size={64} strokeWidth={7} centerLabel={formatNumber(overall.nutrition_score)} />
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>Nutrition</Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
-                    <DonutChart value={overall.mood_score} max={10} color={theme.metric.mood} size={64} strokeWidth={7} centerLabel={formatNumber(overall.mood_score)} />
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>Mood</Typography>
-                  </Box>
-                </Box>
-                <Box sx={{ color: theme.textMuted }}>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Steps: {formatNumber(overall.steps)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Sleep: {formatNumber(overall.sleep)} h</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Nutrition: {formatNumber(overall.nutrition_score)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Mood: {formatNumber(overall.mood_score)}</Typography>
-                </Box>
-                <Box sx={{ color: theme.textMuted, mt: 1 }}>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Sleep quality: {formatNumber(overall.sleep_quality)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Alcohol: {formatNumber(overall.alcohol_units)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Stress: {formatNumber(overall.stress_score)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Social: {formatNumber(overall.social_support_score)}</Typography>
-                  <Typography variant="body2" component="div" sx={{ color: "inherit" }}>Work: {formatNumber(overall.work_satisfaction)}</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
         </Grid>
       </Container>
+        </Box>
+
+        <Box
+          sx={{
+            width: { xs: "100%", lg: 400 },
+            maxWidth: { xs: "100%", lg: 400 },
+            flexShrink: 0,
+            borderLeft: { lg: theme.border },
+            borderTop: { xs: theme.border, lg: "none" },
+            bgcolor: "#fff",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: { xs: "min(70vh, 640px)", lg: 0 },
+            height: { lg: "100%" },
+            maxHeight: { lg: "100%" },
+            overflow: "hidden",
+            boxShadow: { lg: theme.cardShadow },
+          }}
+        >
+          <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
+            <DailyCheckinCalendar value={checkinDateStr} onChange={setCheckinDateStr} accentColor={theme.logoGreen} />
+            <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
+              Selected: {checkinDateStr}
+            </Typography>
+          </Box>
+          <Divider />
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflow: "auto",
+              px: 2,
+              py: 1.5,
+              display: "flex",
+              flexDirection: "column",
+              gap: 1.25,
+            }}
+          >
+            {dailyQError && (
+              <Alert severity="error" onClose={() => setDailyQError(null)} sx={{ py: 0.5, "& .MuiAlert-message": { fontSize: "0.8rem" } }}>
+                {dailyQError}
+              </Alert>
+            )}
+            {dailyQLoading ? (
+              <Typography variant="body2" sx={{ color: theme.textMuted }}>
+                Loading question…
+              </Typography>
+            ) : dailyQ ? (
+              <>
+                <Box sx={chatBubbleAssistantSx}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {dailyQ.question_text}
+                  </Typography>
+                </Box>
+                {lastSubmittedMessage ? (
+                  <Box sx={chatBubbleUserSx}>
+                    <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
+                      You
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: theme.text, lineHeight: 1.45 }}>
+                      {lastSubmittedMessage}
+                    </Typography>
+                  </Box>
+                ) : null}
+                {dailyResult && (
+                  <Box sx={chatBubbleScoreSx}>
+                    <Typography variant="caption" sx={{ color: theme.textMuted }}>
+                      Updated score
+                    </Typography>
+                    <Typography variant="subtitle1" sx={{ color: theme.text, fontWeight: 700, mt: 0.25 }}>
+                      {dailyResult.percentage.toFixed(1)}% · {dailyResult.grade_label}
+                    </Typography>
+                  </Box>
+                )}
+              </>
+            ) : (
+              <Typography variant="body2" sx={{ color: theme.textMuted }}>
+                No question for this date.
+              </Typography>
+            )}
+          </Box>
+
+          <Box
+            component="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!dailyQ) return;
+              const msg = (dailyText || "").trim();
+              if (!msg) {
+                setDailyQError("Please type a short answer (e.g., 'ok', 'amazing', 'not great').");
+                return;
+              }
+              setDailySubmitting(true);
+              setDailyQError(null);
+              api
+                .post("/fantastic/daily-answer-free-text", {
+                  patient_id: patientId,
+                  date: checkinDateStr,
+                  question_id: dailyQ.question_id,
+                  user_message: msg,
+                })
+                .then((res) => {
+                  setLastSubmittedMessage(msg);
+                  setDailyResult(res.data);
+                  setDailyText("");
+                  refetchMetrics();
+                })
+                .catch((err) => {
+                  setDailyQError(err.response?.data?.detail || err.message || "Failed to submit answer");
+                })
+                .finally(() => setDailySubmitting(false));
+            }}
+            sx={{
+              p: 2,
+              pt: 1.5,
+              borderTop: theme.border,
+              bgcolor: "#FAFBFC",
+              flexShrink: 0,
+            }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                value={dailyText}
+                onChange={(e) => setDailyText(e.target.value)}
+                placeholder="Type your answer…"
+                size="small"
+                fullWidth
+                disabled={dailySubmitting || !dailyQ}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              <IconButton
+                type="submit"
+                disabled={dailySubmitting || !dailyQ}
+                aria-label="Send message"
+                sx={{
+                  flexShrink: 0,
+                  color: theme.logoGreen,
+                  "&:hover": { bgcolor: "rgba(22, 163, 74, 0.12)" },
+                  "&.Mui-disabled": { color: theme.textMuted },
+                }}
+              >
+                <Send fontSize="small" />
+              </IconButton>
+            </Stack>
+          </Box>
+        </Box>
+      </Box>
         )}
 
         {sidebarView === "add" && (

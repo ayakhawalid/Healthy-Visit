@@ -17,12 +17,6 @@ import { Link } from "react-router-dom";
 import logo from "../logo.svg";
 import { validateSignupFields } from "../utils/validation";
 
-/** Short hints only on this page; full rules still apply on submit (see validation errors). */
-const SIGNUP_HINT_USERNAME =
-  "3–32 characters: letters, numbers, underscores.";
-const SIGNUP_HINT_PASSWORD =
-  "8+ characters: upper & lower case, digit, symbol.";
-
 /** Compact inputs for the form only — logo block above is unchanged. */
 const formInputSx = {
   "& .MuiOutlinedInput-root": {
@@ -36,7 +30,6 @@ const formInputSx = {
   },
   "& .MuiInputBase-input": { color: "#333", py: 1, fontSize: "0.95rem" },
   "& .MuiInputBase-input::placeholder": { color: "#666", opacity: 1 },
-  "& .MuiFormHelperText-root": { mt: 0.25 },
 };
 
 function SignUp() {
@@ -154,8 +147,7 @@ function SignUp() {
             className="signup-input"
             sx={formInputSx}
             inputProps={{ autoComplete: "off", name: "signup_username" }}
-            helperText={SIGNUP_HINT_USERNAME}
-            FormHelperTextProps={{ sx: { fontSize: "0.65rem", lineHeight: 1.3 } }}
+            helperText={false}
           />
           <TextField
             fullWidth
@@ -181,8 +173,7 @@ function SignUp() {
             className="signup-input"
             sx={formInputSx}
             inputProps={{ autoComplete: "new-password", name: "signup_password" }}
-            helperText={SIGNUP_HINT_PASSWORD}
-            FormHelperTextProps={{ sx: { fontSize: "0.65rem", lineHeight: 1.3 } }}
+            helperText={false}
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">

@@ -103,7 +103,12 @@ function Index() {
                 <Alert
                   severity="error"
                   onClose={() => setLoginError(null)}
-                  sx={{ width: "100%", mb: 2 }}
+                  sx={{
+                    width: "100%",
+                    mb: 2,
+                    textAlign: "left",
+                    "& .MuiAlert-message": { textAlign: "left", width: "100%" },
+                  }}
                 >
                   {loginError}
                 </Alert>
