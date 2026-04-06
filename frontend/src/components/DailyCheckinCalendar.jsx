@@ -18,6 +18,21 @@ function parseISO(iso) {
   return { year: y, month: m - 1, day: d };
 }
 
+const gridBorder = "1px solid #E5E7EB";
+
+/** @param {string} hex - #RRGGBB */
+function accentWithAlpha(hex, alpha) {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) {
+    return `rgba(22, 163, 74, ${alpha})`;
+  }
+  const h = hex.slice(1);
+  if (h.length !== 6) return `rgba(22, 163, 74, ${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 const dayStyle = {
   borderRadius: "50%",
   cursor: "pointer",
@@ -44,8 +59,14 @@ const initialState = {
  * @param {string} props.value - YYYY-MM-DD
  * @param {(iso: string) => void} props.onChange
  * @param {string} [props.accentColor] — selected day and “today” ring/fill (same green)
+ * @param {string} [props.backgroundColor] — panel background (match dashboard right column)
  */
-export default function DailyCheckinCalendar({ value, onChange, accentColor = "#16a34a" }) {
+export default function DailyCheckinCalendar({
+  value,
+  onChange,
+  accentColor = "#16a34a",
+  backgroundColor = "#f0fdf4",
+}) {
   const selected = parseISO(value) || { ...initialState };
   const [view, setView] = useState(() => {
     const p = parseISO(value);
@@ -95,14 +116,22 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
   const now = new Date();
 
   return (
+    <div
+      style={{
+        maxWidth: 360,
+        width: "100%",
+        borderRadius: 8,
+        overflow: "hidden",
+        backgroundColor,
+      }}
+    >
     <table
       role="grid"
       style={{
-        backgroundColor: "#fefcfc",
+        backgroundColor,
         borderCollapse: "collapse",
         tableLayout: "fixed",
         width: "100%",
-        maxWidth: 360,
         margin: 0,
       }}
     >
@@ -113,6 +142,7 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
           fontWeight: 700,
           userSelect: "none",
           captionSide: "top",
+          backgroundColor,
         }}
       >
         <div
@@ -133,11 +163,7 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
         </div>
       </caption>
 
-      <thead
-        style={{
-          borderBottom: "1px solid #e1e1e1",
-        }}
-      >
+      <thead>
         <tr>
           {getWeekdays().map((d, i) => {
             const isWeekend = i > 4;
@@ -150,7 +176,9 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
                 aria-label={d}
                 style={{
                   fontSize: 10,
-                  paddingBottom: 5,
+                  padding: "8px 4px",
+                  border: gridBorder,
+                  backgroundColor,
                   ...(isWeekend ? weekendStyle : {}),
                 }}
               >
@@ -163,12 +191,7 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
 
       <tbody>
         {getDaysInWeeksInMonth(view.year, view.month).map((w, wi) => (
-          <tr
-            key={`week_${wi}`}
-            style={{
-              borderBottom: "1px solid #e1e1e1",
-            }}
-          >
+          <tr key={`week_${wi}`}>
             {w.map((d, di) => {
               const isToday =
                 d > 0 &&
@@ -205,7 +228,7 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
                   ...spanStyle,
                   color: accentColor,
                   fontWeight: 600,
-                  boxShadow: `inset 0 0 0 2px ${accentColor}`,
+                  backgroundColor: accentWithAlpha(accentColor, 0.28),
                 };
               }
 
@@ -216,6 +239,8 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
                     padding: "0.35rem 0.25rem",
                     position: "relative",
                     textAlign: "center",
+                    border: gridBorder,
+                    verticalAlign: "middle",
                   }}
                 >
                   {d > 0 ? (
@@ -248,11 +273,25 @@ export default function DailyCheckinCalendar({ value, onChange, accentColor = "#
 
       <tfoot>
         <tr>
-          <td colSpan={7} style={{ color: accentColor, cursor: "pointer", fontWeight: 600, fontSize: 13, paddingTop: "0.75rem", paddingBottom: "0.25rem" }} onClick={setToday}>
+          <td
+            colSpan={7}
+            style={{
+              color: accentColor,
+              cursor: "pointer",
+              fontWeight: 600,
+              fontSize: 13,
+              padding: "0.65rem 0.5rem",
+              border: gridBorder,
+              textAlign: "center",
+              backgroundColor,
+            }}
+            onClick={setToday}
+          >
             Today
           </td>
         </tr>
       </tfoot>
     </table>
+    </div>
   );
 }

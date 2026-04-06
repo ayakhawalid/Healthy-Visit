@@ -17,8 +17,6 @@ import {
   Stack,
   Divider,
 } from "@mui/material";
-import Send from "@mui/icons-material/Send";
-import { alpha } from "@mui/material/styles";
 import {
   ChartPieSlice,
   ChartBar,
@@ -34,11 +32,24 @@ import {
   Smiley,
 } from "@phosphor-icons/react";
 import DailyCheckinCalendar from "./DailyCheckinCalendar";
+import WeeklyMetricCircles from "./WeeklyMetricCircles";
 import { useHistory, useLocation } from "react-router-dom";
 import { getUser, logout } from "../service/auth";
 import api from "../service/api";
 import DashboardShell from "./DashboardShell";
 import ProfileFormContent from "./ProfileFormContent";
+import { keyframes } from "@emotion/react";
+import { alpha } from "@mui/material/styles";
+import siteLogo from "../logo.svg";
+
+const logoWiggle = keyframes`
+  0%, 100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+`;
 
 // Dashboard theme + metric colors (from palette: steps=red, sleep=blue, nutrition=green, mood=orange)
 const theme = {
@@ -46,7 +57,7 @@ const theme = {
   success: "#1BB934",
   text: "#1F2D3D",
   textMuted: "#868E96",
-  bg: "#F8F9FA",
+  bg: "#FFFFFF",
   cardShadow: "0 2px 8px rgba(31, 45, 61, 0.1), 0 1px 2px rgba(31, 45, 61, 0.06)",
   border: "1px solid #DEE2E6",
   logoGreen: "#16a34a",
@@ -61,43 +72,72 @@ const theme = {
     smoking: "#C2410C",
     stressSocial: "#6366F1",
   },
+  /** Same as right panel — selected sidebar item */
+  sidebarSelectedBg: "#f0fdf4",
+  sidebarSelectedHoverBg: "#ecfdf5",
 };
 
-/** Demo values for the four “Today” donut rings only — swap to `today.*` when metrics are wired */
+const sidebarNavSelectedSx = {
+  "&.Mui-selected": {
+    bgcolor: theme.sidebarSelectedBg,
+    color: theme.text,
+    "&:hover": {
+      bgcolor: theme.sidebarSelectedHoverBg,
+    },
+    "&.Mui-focusVisible": {
+      bgcolor: theme.sidebarSelectedHoverBg,
+    },
+    "& .MuiListItemIcon-root": {
+      color: theme.text,
+    },
+  },
+};
+
+/** Demo values for the six “Today” donut rings when `today` has no value for that field */
 const DEMO_DONUT_TODAY = {
   steps: 6840,
   sleep: 6.5,
   nutrition: 78,
+  cigarettes_per_day: 1,
+  stress_score: 4,
   mood: 7,
 };
 
-/** Colored duotone icon + title for the six “Today’s snapshot” cards */
-function SnapshotCardHeader({ Icon, iconColor, title }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 1.5 }}>
-      <Box
-        sx={{
-          width: 44,
-          height: 44,
-          borderRadius: 2,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          bgcolor: alpha(iconColor, 0.14),
-        }}
-      >
-        <Icon size={24} weight="duotone" color={iconColor} />
-      </Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.text, mb: 0, lineHeight: 1.3 }}>
-        {title}
-      </Typography>
-    </Box>
-  );
+/** Human-readable Today donut stat line. Nutrition `78/100`; stress and mood `7/10`. */
+function formatTodayMetricValue(key, value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  switch (key) {
+    case "steps":
+      return `${Math.round(value).toLocaleString()} steps`;
+    case "sleep": {
+      const rounded = Math.round(value * 10) / 10;
+      const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace(/\.0$/, "");
+      return `${text} hour${rounded === 1 ? "" : "s"}`;
+    }
+    case "nutrition":
+      return `${Math.round(value)}/100`;
+    case "smoking":
+      if (value === 0) return "0 cigarettes";
+      if (value === 1) return "1 cigarette";
+      return `${value % 1 === 0 ? value : value.toFixed(1)} cigarettes`;
+    case "stress":
+    case "mood": {
+      const s = value % 1 === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
+      return `${s}/10`;
+    }
+    default:
+      return String(value);
+  }
 }
 
-// Donut chart: value vs max (0–1), or multi-segment for breakdown. Optional centerLabel shows text inside.
-function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel }) {
+/** Today donut `key` → WeeklyMetricCircles metric id (`steps` → `activity`). */
+function todayKeyToWeeklyMetricId(key) {
+  if (key === "steps") return "activity";
+  return key;
+}
+
+// Donut chart: value vs max (0–1). Optional centerLabel or centerIcon in the middle.
+function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel, centerIcon, trackColor = "#E9ECEF" }) {
   const r = (size - strokeWidth) / 2;
   const cx = size / 2;
   const cy = size / 2;
@@ -106,14 +146,14 @@ function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel
   const filled = ratio * circumference;
   const gap = circumference - filled;
   const fontSize = Math.max(10, Math.min(size * 0.28, 14));
-  return (
+  const svg = (
     <svg width={size} height={size} style={{ display: "block" }}>
       <circle
         cx={cx}
         cy={cy}
         r={r}
         fill="none"
-        stroke="#E9ECEF"
+        stroke={trackColor}
         strokeWidth={strokeWidth}
       />
       <circle
@@ -127,7 +167,7 @@ function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cy})`}
       />
-      {centerLabel != null && centerLabel !== "" && (
+      {centerIcon == null && centerLabel != null && centerLabel !== "" && (
         <text
           x={cx}
           y={cy}
@@ -140,6 +180,28 @@ function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel
       )}
     </svg>
   );
+  if (centerIcon != null) {
+    return (
+      <Box sx={{ position: "relative", width: size, height: size, display: "inline-block" }}>
+        {svg}
+        <Box
+          sx={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          {centerIcon}
+        </Box>
+      </Box>
+    );
+  }
+  return svg;
 }
 
 function normalizeRow(row) {
@@ -194,14 +256,9 @@ export default function PatientDashboard() {
   const [formValues, setFormValues] = useState({ steps: "", sleep: "", sleep_quality: "", active_minutes: "", nutrition_score: "", stress_score: "", mood_score: "" });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
-  const [dailyQ, setDailyQ] = useState(null);
-  const [dailyQLoading, setDailyQLoading] = useState(false);
-  const [dailyQError, setDailyQError] = useState(null);
-  const [dailySubmitting, setDailySubmitting] = useState(false);
-  const [dailyResult, setDailyResult] = useState(null);
-  const [dailyText, setDailyText] = useState("");
   const [checkinDateStr, setCheckinDateStr] = useState(() => new Date().toISOString().slice(0, 10));
-  const [lastSubmittedMessage, setLastSubmittedMessage] = useState(null);
+  /** null = all metrics on weekly chart; otherwise matches WeeklyMetricCircles ids (activity, sleep, …) */
+  const [weeklyChartMetricId, setWeeklyChartMetricId] = useState(null);
 
   // 1) Fetch current user
   useEffect(() => {
@@ -279,20 +336,6 @@ export default function PatientDashboard() {
       .finally(() => setLoading(false));
   }, [authChecked, patientId]);
 
-  // 3) Fetch adaptive daily question for the date selected in the check-in calendar
-  useEffect(() => {
-    if (!user || patientId == null) return;
-    setDailyQLoading(true);
-    setDailyQError(null);
-    setDailyResult(null);
-    setLastSubmittedMessage(null);
-    api
-      .get("/fantastic/daily-question", { params: { patient_id: patientId, date: checkinDateStr } })
-      .then((res) => setDailyQ(res.data))
-      .catch((err) => setDailyQError(err.response?.data?.detail || err.message || "Failed to load daily question"))
-      .finally(() => setDailyQLoading(false));
-  }, [user, patientId, checkinDateStr]);
-
   const { today, week1, week2, week3, last21 } = useMemo(() => {
     if (patientId == null) {
       return { today: null, week1: [], week2: [], week3: [], last21: [] };
@@ -314,6 +357,64 @@ export default function PatientDashboard() {
     const week3 = last21.slice(14, 21);
     return { today, week1, week2, week3, last21 };
   }, [metrics, patientId]);
+
+  /** Same six metrics + icons as WeeklyMetricCircles — values from `today` row or demo fallbacks */
+  const todayDonutMetrics = useMemo(() => {
+    if (!today) return [];
+    const d = DEMO_DONUT_TODAY;
+    const pick = (field, demoVal) =>
+      typeof today[field] === "number" && !Number.isNaN(today[field]) ? today[field] : demoVal;
+    return [
+      {
+        key: "steps",
+        label: "Activity",
+        value: pick("steps", d.steps),
+        max: 10000,
+        Icon: Sneaker,
+        color: theme.metric.steps,
+      },
+      {
+        key: "sleep",
+        label: "Sleep",
+        value: pick("sleep", d.sleep),
+        max: 8,
+        Icon: MoonStars,
+        color: theme.metric.sleep,
+      },
+      {
+        key: "nutrition",
+        label: "Nutrition",
+        value: pick("nutrition_score", d.nutrition),
+        max: 100,
+        Icon: ForkKnife,
+        color: theme.metric.nutrition,
+      },
+      {
+        key: "smoking",
+        label: "Smoking",
+        value: pick("cigarettes_per_day", d.cigarettes_per_day),
+        max: 20,
+        Icon: Cigarette,
+        color: theme.snapshotIcon.smoking,
+      },
+      {
+        key: "stress",
+        label: "Stress",
+        value: pick("stress_score", d.stress_score),
+        max: 10,
+        Icon: Brain,
+        color: theme.snapshotIcon.stressSocial,
+      },
+      {
+        key: "mood",
+        label: "Mood",
+        value: pick("mood_score", d.mood),
+        max: 10,
+        Icon: Smiley,
+        color: theme.metric.mood,
+      },
+    ];
+  }, [today]);
 
   if (loading) {
     return (
@@ -363,20 +464,6 @@ export default function PatientDashboard() {
   const w2 = weekSummary(week2);
   const w3 = weekSummary(week3);
 
-  /** Last-21-days averages — used by Statistics and any summary donuts */
-  const overall = {
-    steps: average(last21, "steps"),
-    sleep: average(last21, "sleep"),
-    sleep_quality: average(last21, "sleep_quality"),
-    nutrition_score: average(last21, "nutrition_score"),
-    alcohol_units: average(last21, "alcohol_units"),
-    stress_score: average(last21, "stress_score"),
-    social_support_score: average(last21, "social_support_score"),
-    cigarettes_per_day: average(last21, "cigarettes_per_day"),
-    mood_score: average(last21, "mood_score"),
-    work_satisfaction: average(last21, "work_satisfaction"),
-  };
-
   const formatNumber = (n) =>
     typeof n === "number" ? n.toFixed(1).replace(/\.0$/, "") : "—";
 
@@ -390,70 +477,21 @@ export default function PatientDashboard() {
     borderRadius: 3,
     mb: 2,
   };
-  /** Six snapshot metric cards — lift off the page slightly */
-  const snapshotCardSx = {
-    ...cardSx,
-    mb: 0,
-    boxShadow: "0 6px 20px rgba(31, 45, 61, 0.1), 0 2px 8px rgba(31, 45, 61, 0.06)",
-    border: "1px solid rgba(31, 45, 61, 0.06)",
-  };
   const cardTitleSx = { fontWeight: 600, color: theme.text, mb: 1.5 };
-  /** Today row — four donut stats: no card chrome, smaller label/value */
+  /** Today row — six donut stats (icons match WeeklyMetricCircles): no card chrome, smaller label/value */
   const donutRowCardSx = { bgcolor: "transparent", boxShadow: "none", mb: 0 };
+  /** Stacked: donut on top, label + value in a row underneath (matches weekly metric circle tint) */
   const donutRowCardContentSx = {
     py: 2,
     px: 0.5,
     bgcolor: "transparent",
     "&:last-child": { pb: 2 },
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
+    justifyContent: "flex-start",
+    gap: 1.25,
   };
-  const donutRowLabelSx = { color: theme.textMuted, display: "block", mb: 0.25, fontSize: "0.875rem" };
-  const donutRowValueSx = { color: theme.text, fontWeight: 600, fontSize: "1.25rem", lineHeight: 1.25 };
-
-  const CHAT_ASSISTANT_BG = "#E8ECF0";
-  /** Same hue as theme.logoGreen (#16a34a), low alpha — soft “You” bubble */
-  const CHAT_USER_BG = "rgba(22, 163, 74, 0.14)";
-  const CHAT_SCORE_BG = "#BBF7D0";
-  const chatBubbleShadow = "0 2px 10px rgba(31, 45, 61, 0.08), 0 1px 3px rgba(31, 45, 61, 0.05)";
-  const chatBubbleAssistantSx = {
-    alignSelf: "flex-start",
-    maxWidth: "88%",
-    ml: 0.5,
-    bgcolor: CHAT_ASSISTANT_BG,
-    color: theme.text,
-    borderRadius: "2px 14px 14px 14px",
-    px: 1.5,
-    py: 1.15,
-    boxShadow: chatBubbleShadow,
-  };
-  const chatBubbleUserSx = {
-    alignSelf: "flex-end",
-    maxWidth: "88%",
-    mr: 0.5,
-    bgcolor: CHAT_USER_BG,
-    color: theme.text,
-    borderRadius: "2px 4px 14px 14px",
-    px: 1.5,
-    py: 1.15,
-    textAlign: "left",
-    boxShadow: chatBubbleShadow,
-  };
-  const chatBubbleScoreSx = {
-    alignSelf: "flex-end",
-    maxWidth: "88%",
-    mr: 0.5,
-    bgcolor: CHAT_SCORE_BG,
-    color: theme.text,
-    borderRadius: "2px 4px 14px 14px",
-    px: 1.5,
-    py: 1.15,
-    textAlign: "right",
-    boxShadow: chatBubbleShadow,
-  };
-
   const handleAddMetric = (e) => {
     e?.preventDefault();
     setFormError(null);
@@ -518,7 +556,7 @@ export default function PatientDashboard() {
               setSidebarView("dashboard");
               history.replace("/patient-dashboard");
             }}
-            sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <ChartPieSlice size={22} />
@@ -532,7 +570,7 @@ export default function PatientDashboard() {
               setFormError(null);
               history.replace("/patient-dashboard");
             }}
-            sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <PlusCircle size={22} />
@@ -545,7 +583,7 @@ export default function PatientDashboard() {
               setSidebarView("manage");
               history.replace("/patient-dashboard");
             }}
-            sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <PencilSimple size={22} />
@@ -558,7 +596,7 @@ export default function PatientDashboard() {
               setSidebarView("statistics");
               history.replace("/patient-dashboard");
             }}
-            sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
           >
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <ChartBar size={22} />
@@ -602,20 +640,25 @@ export default function PatientDashboard() {
             flex: 1,
             minWidth: 0,
             minHeight: 0,
-            overflowY: "auto",
+            overflowY: { xs: "auto", lg: "hidden" },
+            overflowX: "hidden",
             height: { lg: "100%" },
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-      <Container maxWidth="lg" sx={{ pb: 4, pt: 2 }}>
+      <Container maxWidth="lg" sx={{ flexShrink: 0, pt: 2, pb: 0, px: { xs: 2, sm: 3 } }}>
         {/* Quick stats row with donut charts */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: 3 }}>
           <Typography
-            variant="caption"
+            variant="subtitle2"
             sx={{
               display: "block",
-              color: theme.textMuted,
+              color: theme.text,
               textTransform: "uppercase",
               letterSpacing: 1,
+              fontSize: "0.75rem",
+              fontWeight: 600,
               mb: 1.5,
               mt: 0,
             }}
@@ -623,183 +666,123 @@ export default function PatientDashboard() {
             Today
           </Typography>
           <Grid container spacing={2}>
-            <Grid item xs={6} md={3}>
-              <Card elevation={0} sx={donutRowCardSx}>
-                <CardContent sx={donutRowCardContentSx}>
-                  <DonutChart
-                    value={DEMO_DONUT_TODAY.steps}
-                    max={10000}
-                    color={theme.metric.steps}
-                    size={100}
-                    strokeWidth={15}
-                  />
-                  <Box>
-                    <Typography component="div" sx={donutRowLabelSx}>
-                      Steps
-                    </Typography>
-                    <Typography component="div" sx={donutRowValueSx}>
-                      {DEMO_DONUT_TODAY.steps}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Card elevation={0} sx={donutRowCardSx}>
-                <CardContent sx={donutRowCardContentSx}>
-                  <DonutChart
-                    value={DEMO_DONUT_TODAY.sleep}
-                    max={8}
-                    color={theme.metric.sleep}
-                    size={100}
-                    strokeWidth={15}
-                  />
-                  <Box>
-                    <Typography component="div" sx={donutRowLabelSx}>
-                      Sleep (h)
-                    </Typography>
-                    <Typography component="div" sx={donutRowValueSx}>
-                      {DEMO_DONUT_TODAY.sleep}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Card elevation={0} sx={donutRowCardSx}>
-                <CardContent sx={donutRowCardContentSx}>
-                  <DonutChart
-                    value={DEMO_DONUT_TODAY.nutrition}
-                    max={100}
-                    color={theme.metric.nutrition}
-                    size={100}
-                    strokeWidth={15}
-                  />
-                  <Box>
-                    <Typography component="div" sx={donutRowLabelSx}>
-                      Nutrition
-                    </Typography>
-                    <Typography component="div" sx={donutRowValueSx}>
-                      {DEMO_DONUT_TODAY.nutrition}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Card elevation={0} sx={donutRowCardSx}>
-                <CardContent sx={donutRowCardContentSx}>
-                  <DonutChart
-                    value={DEMO_DONUT_TODAY.mood}
-                    max={10}
-                    color={theme.metric.mood}
-                    size={100}
-                    strokeWidth={15}
-                  />
-                  <Box>
-                    <Typography component="div" sx={donutRowLabelSx}>
-                      Mood
-                    </Typography>
-                    <Typography component="div" sx={donutRowValueSx}>
-                      {DEMO_DONUT_TODAY.mood}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
+            {todayDonutMetrics.map((m) => {
+              const Icon = m.Icon;
+              const displayValue = formatTodayMetricValue(m.key, m.value);
+              const weeklyId = todayKeyToWeeklyMetricId(m.key);
+              const isWeeklySelected = weeklyChartMetricId === weeklyId;
+              return (
+                <Grid item xs={6} sm={4} md={2} key={m.key}>
+                  <Card
+                    elevation={0}
+                    sx={{
+                      ...donutRowCardSx,
+                      cursor: "pointer",
+                      "&:focus-visible": { outline: `2px solid ${m.color}`, outlineOffset: 2 },
+                    }}
+                    onClick={() =>
+                      setWeeklyChartMetricId((prev) => (prev === weeklyId ? null : weeklyId))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setWeeklyChartMetricId((prev) => (prev === weeklyId ? null : weeklyId));
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={isWeeklySelected}
+                    aria-label={`${m.label}. Tap to show this metric over three weeks in the chart below.`}
+                  >
+                    <CardContent sx={donutRowCardContentSx}>
+                      <Box
+                        sx={{
+                          width: 100,
+                          height: 100,
+                          borderRadius: "50%",
+                          bgcolor: alpha(m.color, 0.08),
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <DonutChart
+                          value={m.value}
+                          max={m.max}
+                          color={m.color}
+                          size={96}
+                          strokeWidth={14}
+                          trackColor={alpha(m.color, 0.08)}
+                          centerIcon={<Icon size={30} weight="duotone" color={m.color} />}
+                        />
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 0.35,
+                          textAlign: "center",
+                          width: "100%",
+                        }}
+                      >
+                        <Typography
+                          component="div"
+                          sx={{
+                            color: m.color,
+                            fontSize: "0.875rem",
+                            lineHeight: 1.3,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {m.label}
+                        </Typography>
+                        <Typography
+                          component="div"
+                          sx={{
+                            color: "#4A4A4A",
+                            fontSize: "1.1rem",
+                            lineHeight: 1.35,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {displayValue}
+                        </Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
           </Grid>
         </Box>
-
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <Grid container spacing={1}>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={Sneaker} iconColor={theme.metric.steps} title="Activity" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Steps: {today.steps ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Active minutes: {today.active_minutes ?? "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={MoonStars} iconColor={theme.metric.sleep} title="Sleep" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Hours: {today.sleep ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Quality: {today.sleep_quality ?? "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={ForkKnife} iconColor={theme.metric.nutrition} title="Nutrition & Alcohol" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Nutrition score: {today.nutrition_score ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Alcohol units: {today.alcohol_units ?? "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={Cigarette} iconColor={theme.snapshotIcon.smoking} title="Smoking" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Cigarettes/day: {today.cigarettes_per_day ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Status:{" "}
-                      {today.is_smoking === true
-                        ? "Smoker"
-                        : today.is_smoking === false
-                        ? "Non-smoker"
-                        : "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={Brain} iconColor={theme.snapshotIcon.stressSocial} title="Stress & Social" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Stress: {today.stress_score ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Social support: {today.social_support_score ?? "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Card sx={snapshotCardSx}>
-                  <CardContent>
-                    <SnapshotCardHeader Icon={Smiley} iconColor={theme.metric.mood} title="Mood & Work" />
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Mood: {today.mood_score ?? "—"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                      Work satisfaction: {today.work_satisfaction ?? "—"}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Grid>
-        </Grid>
       </Container>
+
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          px: { xs: 2, sm: 3 },
+          pb: 2,
+          maxWidth: "lg",
+          width: "100%",
+          mx: "auto",
+          boxSizing: "border-box",
+        }}
+      >
+        <WeeklyMetricCircles
+          weeklyRows={last21.slice(-7)}
+          last21Rows={last21}
+          theme={theme}
+          selectedMetricId={weeklyChartMetricId}
+          selectedCalendarDate={checkinDateStr}
+          onShowAllMetrics={() => setWeeklyChartMetricId(null)}
+        />
+      </Box>
         </Box>
 
         <Box
@@ -809,7 +792,7 @@ export default function PatientDashboard() {
             flexShrink: 0,
             borderLeft: { lg: theme.border },
             borderTop: { xs: theme.border, lg: "none" },
-            bgcolor: "#fff",
+            bgcolor: "#f0fdf4",
             display: "flex",
             flexDirection: "column",
             minHeight: { xs: "min(70vh, 640px)", lg: 0 },
@@ -820,7 +803,12 @@ export default function PatientDashboard() {
           }}
         >
           <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
-            <DailyCheckinCalendar value={checkinDateStr} onChange={setCheckinDateStr} accentColor={theme.logoGreen} />
+            <DailyCheckinCalendar
+              value={checkinDateStr}
+              onChange={setCheckinDateStr}
+              accentColor={theme.logoGreen}
+              backgroundColor={theme.sidebarSelectedBg}
+            />
             <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
               Selected: {checkinDateStr}
             </Typography>
@@ -830,125 +818,30 @@ export default function PatientDashboard() {
             sx={{
               flex: 1,
               minHeight: 0,
-              overflow: "auto",
-              px: 2,
-              py: 1.5,
+              bgcolor: "#ecfdf5",
               display: "flex",
-              flexDirection: "column",
-              gap: 1.25,
+              alignItems: "center",
+              justifyContent: "center",
+              p: { xs: 1.5, sm: 2 },
             }}
           >
-            {dailyQError && (
-              <Alert severity="error" onClose={() => setDailyQError(null)} sx={{ py: 0.5, "& .MuiAlert-message": { fontSize: "0.8rem" } }}>
-                {dailyQError}
-              </Alert>
-            )}
-            {dailyQLoading ? (
-              <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                Loading question…
-              </Typography>
-            ) : dailyQ ? (
-              <>
-                <Box sx={chatBubbleAssistantSx}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {dailyQ.question_text}
-                  </Typography>
-                </Box>
-                {lastSubmittedMessage ? (
-                  <Box sx={chatBubbleUserSx}>
-                    <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mb: 0.25 }}>
-                      You
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: theme.text, lineHeight: 1.45 }}>
-                      {lastSubmittedMessage}
-                    </Typography>
-                  </Box>
-                ) : null}
-                {dailyResult && (
-                  <Box sx={chatBubbleScoreSx}>
-                    <Typography variant="caption" sx={{ color: theme.textMuted }}>
-                      Updated score
-                    </Typography>
-                    <Typography variant="subtitle1" sx={{ color: theme.text, fontWeight: 700, mt: 0.25 }}>
-                      {dailyResult.percentage.toFixed(1)}% · {dailyResult.grade_label}
-                    </Typography>
-                  </Box>
-                )}
-              </>
-            ) : (
-              <Typography variant="body2" sx={{ color: theme.textMuted }}>
-                No question for this date.
-              </Typography>
-            )}
-          </Box>
-
-          <Box
-            component="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!dailyQ) return;
-              const msg = (dailyText || "").trim();
-              if (!msg) {
-                setDailyQError("Please type a short answer (e.g., 'ok', 'amazing', 'not great').");
-                return;
-              }
-              setDailySubmitting(true);
-              setDailyQError(null);
-              api
-                .post("/fantastic/daily-answer-free-text", {
-                  patient_id: patientId,
-                  date: checkinDateStr,
-                  question_id: dailyQ.question_id,
-                  user_message: msg,
-                })
-                .then((res) => {
-                  setLastSubmittedMessage(msg);
-                  setDailyResult(res.data);
-                  setDailyText("");
-                  refetchMetrics();
-                })
-                .catch((err) => {
-                  setDailyQError(err.response?.data?.detail || err.message || "Failed to submit answer");
-                })
-                .finally(() => setDailySubmitting(false));
-            }}
-            sx={{
-              p: 2,
-              pt: 1.5,
-              borderTop: theme.border,
-              bgcolor: "#FAFBFC",
-              flexShrink: 0,
-            }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TextField
-                value={dailyText}
-                onChange={(e) => setDailyText(e.target.value)}
-                placeholder="Type your answer…"
-                size="small"
-                fullWidth
-                disabled={dailySubmitting || !dailyQ}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
-                  }
-                }}
-              />
-              <IconButton
-                type="submit"
-                disabled={dailySubmitting || !dailyQ}
-                aria-label="Send message"
-                sx={{
-                  flexShrink: 0,
-                  color: theme.logoGreen,
-                  "&:hover": { bgcolor: "rgba(22, 163, 74, 0.12)" },
-                  "&.Mui-disabled": { color: theme.textMuted },
-                }}
-              >
-                <Send fontSize="small" />
-              </IconButton>
-            </Stack>
+            <Box
+              component="img"
+              src={siteLogo}
+              alt=""
+              sx={{
+                width: "100%",
+                height: "100%",
+                maxHeight: "100%",
+                objectFit: "contain",
+                display: "block",
+                transformOrigin: "center center",
+                animation: `${logoWiggle} 2.4s ease-in-out infinite`,
+                "@media (prefers-reduced-motion: reduce)": {
+                  animation: "none",
+                },
+              }}
+            />
           </Box>
         </Box>
       </Box>

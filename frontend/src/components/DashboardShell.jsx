@@ -135,7 +135,22 @@ export default function DashboardShell({
             <ListItemButton
               selected={profileSelected}
               onClick={onProfileClick}
-              sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+              sx={{
+                ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}),
+                ...(theme.sidebarSelectedBg
+                  ? {
+                      "&.Mui-selected": {
+                        bgcolor: theme.sidebarSelectedBg,
+                        color: theme.text,
+                        "&:hover": { bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg },
+                        "&.Mui-focusVisible": {
+                          bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg,
+                        },
+                        "& .MuiListItemIcon-root": { color: theme.text },
+                      },
+                    }
+                  : {}),
+              }}
             >
               <ListItemIcon
                 sx={{
@@ -156,7 +171,22 @@ export default function DashboardShell({
               component={Link}
               to={profileHref}
               selected={profileSelected}
-              sx={!sidebarOpen ? { justifyContent: "center", px: 0 } : {}}
+              sx={{
+                ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}),
+                ...(theme.sidebarSelectedBg
+                  ? {
+                      "&.Mui-selected": {
+                        bgcolor: theme.sidebarSelectedBg,
+                        color: theme.text,
+                        "&:hover": { bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg },
+                        "&.Mui-focusVisible": {
+                          bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg,
+                        },
+                        "& .MuiListItemIcon-root": { color: theme.text },
+                      },
+                    }
+                  : {}),
+              }}
             >
               <ListItemIcon
                 sx={{
