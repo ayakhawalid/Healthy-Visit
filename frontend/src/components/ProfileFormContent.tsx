@@ -9,6 +9,7 @@ import {
   Stack,
   CircularProgress,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { Link, Redirect } from "react-router-dom";
 import { getUser, updateMyProfile } from "../service/auth";
 import {
@@ -149,94 +150,124 @@ export default function ProfileFormContent({
   }
 
   const backHref = user ? dashboardPathForUser(user) : "/";
+  const themedText = embedded ? alpha(accentPrimary, 0.92) : defaultTheme.text;
+  const themedMutedText = embedded ? alpha(accentPrimary, 0.72) : defaultTheme.textMuted;
+  const formStack = (
+    <Stack spacing={2.5}>
+      <TextField
+        label="Username"
+        fullWidth
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        disabled={saving}
+        helperText={USERNAME_RULES}
+      />
+      <TextField
+        label="Email"
+        type="email"
+        fullWidth
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={saving}
+        helperText={EMAIL_RULES}
+      />
+      <Typography
+        variant="subtitle1"
+        sx={{ pt: 1, color: "#c62828", fontSize: "1.05rem", fontWeight: 700 }}
+      >
+        Change password
+      </Typography>
+      <TextField
+        label="Current password"
+        type="password"
+        fullWidth
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+        disabled={saving}
+        autoComplete="current-password"
+      />
+      <TextField
+        label="New password"
+        type="password"
+        fullWidth
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        disabled={saving}
+        helperText={PASSWORD_RULES}
+        autoComplete="new-password"
+      />
+      <TextField
+        label="Confirm new password"
+        type="password"
+        fullWidth
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        disabled={saving}
+        autoComplete="new-password"
+      />
+      <Stack direction="row" spacing={2} sx={{ pt: 1 }} flexWrap="wrap">
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={saving}
+          sx={{ bgcolor: accentPrimary, "&:hover": { bgcolor: accentPrimary, filter: "brightness(0.92)" } }}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+        {!embedded && (
+          <Button component={Link} to={backHref} disabled={saving}>
+            Back to dashboard
+          </Button>
+        )}
+      </Stack>
+    </Stack>
+  );
 
   return (
-    <Container maxWidth="sm" sx={containerSx}>
-      <Typography variant="h4" sx={{ fontWeight: 600, color: accentPrimary, mb: 1 }}>
-        {title}
-      </Typography>
-      <Typography variant="body2" sx={{ color: defaultTheme.textMuted, mb: 3 }}>
-        Update your username, email, or password. The same rules apply as when you signed up.
-      </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
-          {success}
-        </Alert>
-      )}
-
-      <Card sx={{ p: 3, border: defaultTheme.border }}>
-        <Stack spacing={2.5}>
-          <TextField
-            label="Username"
-            fullWidth
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={saving}
-            helperText={USERNAME_RULES}
-          />
-          <TextField
-            label="Email"
-            type="email"
-            fullWidth
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={saving}
-            helperText={EMAIL_RULES}
-          />
-          <Typography variant="subtitle2" sx={{ pt: 1, color: defaultTheme.text }}>
-            Change password (optional)
-          </Typography>
-          <TextField
-            label="Current password"
-            type="password"
-            fullWidth
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            disabled={saving}
-            autoComplete="current-password"
-          />
-          <TextField
-            label="New password"
-            type="password"
-            fullWidth
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            disabled={saving}
-            helperText={PASSWORD_RULES}
-            autoComplete="new-password"
-          />
-          <TextField
-            label="Confirm new password"
-            type="password"
-            fullWidth
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={saving}
-            autoComplete="new-password"
-          />
-          <Stack direction="row" spacing={2} sx={{ pt: 1 }} flexWrap="wrap">
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              disabled={saving}
-              sx={{ bgcolor: accentPrimary, "&:hover": { bgcolor: accentPrimary, filter: "brightness(0.92)" } }}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-            {!embedded && (
-              <Button component={Link} to={backHref} disabled={saving}>
-                Back to dashboard
-              </Button>
-            )}
-          </Stack>
-        </Stack>
-      </Card>
-    </Container>
+    embedded ? (
+      <Stack
+        spacing={2.5}
+        sx={{
+          width: "100%",
+          p: { xs: 2, sm: 3 },
+          "& .MuiInputLabel-root, & .MuiFormHelperText-root": { color: "#000" },
+          "& .MuiOutlinedInput-root fieldset": { borderColor: alpha(accentPrimary, 0.22) },
+          "& .MuiOutlinedInput-root:hover fieldset": { borderColor: alpha(accentPrimary, 0.34) },
+          "& .MuiOutlinedInput-root.Mui-focused fieldset": { borderColor: accentPrimary },
+          "& .MuiInputBase-input": { color: "#000" },
+        }}
+      >
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {success && (
+          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+            {success}
+          </Alert>
+        )}
+        {formStack}
+      </Stack>
+    ) : (
+      <Container maxWidth="sm" sx={containerSx}>
+        <Typography variant="body2" sx={{ color: defaultTheme.textMuted, mb: 3 }}>
+          Update your username, email, or password. The same rules apply as when you signed up.
+        </Typography>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {success && (
+          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+            {success}
+          </Alert>
+        )}
+        <Card sx={{ p: 3, border: defaultTheme.border }}>
+          {formStack}
+        </Card>
+      </Container>
+    )
   );
 }

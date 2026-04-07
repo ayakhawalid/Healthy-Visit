@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Card,
@@ -30,6 +30,9 @@ import {
   Cigarette,
   Brain,
   Smiley,
+  Microphone,
+  PaperPlaneTilt,
+  UsersThree,
 } from "@phosphor-icons/react";
 import DailyCheckinCalendar from "./DailyCheckinCalendar";
 import WeeklyMetricCircles from "./WeeklyMetricCircles";
@@ -61,6 +64,8 @@ const theme = {
   cardShadow: "0 2px 8px rgba(31, 45, 61, 0.1), 0 1px 2px rgba(31, 45, 61, 0.06)",
   border: "1px solid #DEE2E6",
   logoGreen: "#16a34a",
+  /** Recording / mic-on (same red as steps donut) */
+  danger: "#ED1C24",
   metric: {
     steps: "#ED1C24",     // Airframe red
     sleep: "#444D7E",    // blue from palette
@@ -76,6 +81,30 @@ const theme = {
   sidebarSelectedBg: "#f0fdf4",
   sidebarSelectedHoverBg: "#ecfdf5",
 };
+
+/** Add-entry chat: distinct message fills (same palette as original Chip bubbles). */
+const ADD_ENTRY_CHAT = {
+  /** Tiled logo wallpaper (grey via CSS filter on overlay); opacity of the layer */
+  panelTileOpacity: 0.12,
+  /** Repeat grid period (px) — spacing between tile centers; larger than the logo for gaps */
+  panelTileSizePx: 88,
+  /** Drawn logo size inside each grid cell (px); smaller than panelTileSizePx */
+  panelLogoSizePx: 30,
+  /** User (right): primary sky-blue tint */
+  userBubble: (primary) => alpha(primary, 0.15),
+  userBorder: (primary) => `1px solid ${alpha(primary, 0.35)}`,
+  /** Assistant (left + logo): soft indigo/lavender */
+  assistantBubble: "#eef2ff",
+  assistantBorder: "1px solid rgba(99, 102, 241, 0.22)",
+  /** Live speech-transcript preview */
+  liveBg: "#fff8e1",
+  liveBorder: "1px solid rgba(234, 179, 8, 0.35)",
+};
+
+const ADD_ENTRY_TILE_PX = ADD_ENTRY_CHAT.panelTileSizePx;
+const ADD_ENTRY_LOGO_IN_TILE_PX = ADD_ENTRY_CHAT.panelLogoSizePx;
+const ADD_ENTRY_TILE_LOGO_OFFSET = (ADD_ENTRY_TILE_PX - ADD_ENTRY_LOGO_IN_TILE_PX) / 2;
+const ADD_ENTRY_TILE_HALF = ADD_ENTRY_TILE_PX / 2;
 
 const sidebarNavSelectedSx = {
   "&.Mui-selected": {
@@ -102,6 +131,21 @@ const DEMO_DONUT_TODAY = {
   stress_score: 4,
   mood: 7,
 };
+
+const ADD_ENTRY_TOPICS = [
+  { id: "family-friends", label: "Family & Friends", Icon: UsersThree },
+  { id: "activity", label: "Activity", Icon: Sneaker },
+  { id: "nutrition", label: "Nutrition", Icon: ForkKnife },
+  { id: "tobacco-toxics", label: "Tobacco & Toxics", Icon: Cigarette },
+  { id: "alcohol", label: "Alcohol", Icon: Smiley },
+  { id: "sleep-stress-safe-sex", label: "Sleep / Stress / Safe Sex", Icon: MoonStars },
+  { id: "type", label: "Type (Behavior)", Icon: Brain },
+  { id: "insight", label: "Insight", Icon: Smiley },
+  { id: "career", label: "Career", Icon: ChartBar },
+];
+
+/** Web Speech API language for the mic (Hebrew only). */
+const SPEECH_RECOGNITION_LANG = "he-IL";
 
 /** Human-readable Today donut stat line. Nutrition `78/100`; stress and mood `7/10`. */
 function formatTodayMetricValue(key, value) {
@@ -253,12 +297,38 @@ export default function PatientDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [formValues, setFormValues] = useState({ steps: "", sleep: "", sleep_quality: "", active_minutes: "", nutrition_score: "", stress_score: "", mood_score: "" });
-  const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [selectedTopicId, setSelectedTopicId] = useState(null);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [confirmSaving, setConfirmSaving] = useState(false);
+  const [topicRailCollapsed, setTopicRailCollapsed] = useState(false);
+  /** While collapsed, hovering the rail temporarily expands it (no arrow button). */
+  const [topicRailHover, setTopicRailHover] = useState(false);
+  const topicRailNarrow = topicRailCollapsed && !topicRailHover;
+  const recognitionRef = useRef(null);
+  const recognitionActiveRef = useRef(false);
+  const recognitionStartingRef = useRef(false);
   const [checkinDateStr, setCheckinDateStr] = useState(() => new Date().toISOString().slice(0, 10));
   /** null = all metrics on weekly chart; otherwise matches WeeklyMetricCircles ids (activity, sleep, …) */
   const [weeklyChartMetricId, setWeeklyChartMetricId] = useState(null);
+
+  /** Stable unique SVG pattern ids (React 17 has no useId) */
+  const addEntryWallpaperKey = useMemo(() => `w${Math.random().toString(36).slice(2, 11)}`, []);
+  const addEntryPatternBrickA = `chat-wall-a-${addEntryWallpaperKey}`;
+  const addEntryPatternBrickB = `chat-wall-b-${addEntryWallpaperKey}`;
+
+  /** First visit to Add entry: default to Family & Friends and show chat (topic rail collapses like a manual pick). */
+  useLayoutEffect(() => {
+    if (sidebarView !== "add" || selectedTopicId != null) return;
+    setSelectedTopicId(ADD_ENTRY_TOPICS[0].id);
+    setTopicRailCollapsed(true);
+  }, [sidebarView, selectedTopicId]);
 
   // 1) Fetch current user
   useEffect(() => {
@@ -416,6 +486,63 @@ export default function PatientDashboard() {
     ];
   }, [today]);
 
+  const selectedTopic = useMemo(
+    () => ADD_ENTRY_TOPICS.find((t) => t.id === selectedTopicId) || null,
+    [selectedTopicId]
+  );
+
+  const speechRecognitionSupported =
+    typeof window !== "undefined" &&
+    (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  useEffect(() => {
+    if (!speechRecognitionSupported) return undefined;
+    const SpeechRecognitionImpl =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SpeechRecognitionImpl();
+    rec.lang = SPEECH_RECOGNITION_LANG;
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const chunk = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) {
+          setChatInput((prev) => `${prev}${prev ? " " : ""}${chunk.trim()}`.trim());
+          setLiveTranscript("");
+        } else {
+          interim += chunk;
+        }
+      }
+      if (interim.trim()) setLiveTranscript(interim.trim());
+    };
+    rec.onstart = () => {
+      recognitionStartingRef.current = false;
+      recognitionActiveRef.current = true;
+      setIsListening(true);
+    };
+    rec.onend = () => {
+      recognitionStartingRef.current = false;
+      recognitionActiveRef.current = false;
+      setIsListening(false);
+    };
+    rec.onerror = () => {
+      recognitionStartingRef.current = false;
+      recognitionActiveRef.current = false;
+      setIsListening(false);
+    };
+    recognitionRef.current = rec;
+    return () => {
+      try {
+        rec.stop();
+      } catch (e) {
+        console.warn("Speech recognition stop failed", e);
+      }
+      recognitionStartingRef.current = false;
+      recognitionActiveRef.current = false;
+    };
+  }, [speechRecognitionSupported]);
+
   if (loading) {
     return (
       <Box
@@ -492,30 +619,187 @@ export default function PatientDashboard() {
     justifyContent: "flex-start",
     gap: 1.25,
   };
-  const handleAddMetric = (e) => {
+  const addTopicPalette = [
+    theme.metric.nutrition,
+    theme.metric.steps,
+    theme.metric.sleep,
+    theme.snapshotIcon.smoking,
+    theme.metric.mood,
+    theme.snapshotIcon.stressSocial,
+    theme.metric.steps,
+    theme.metric.sleep,
+    theme.metric.nutrition,
+  ];
+  const rightSidePanel = (
+    <Box
+      sx={{
+        width: { xs: "100%", lg: 400 },
+        maxWidth: { xs: "100%", lg: 400 },
+        flexShrink: 0,
+        borderLeft: "none",
+        borderTop: "none",
+        bgcolor: "#f0fdf4",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: { xs: "min(70vh, 640px)", lg: 0 },
+        height: { lg: "100%" },
+        maxHeight: { lg: "100%" },
+        overflow: "hidden",
+        boxShadow: { lg: "-12px 0 18px -14px rgba(31,45,61,0.35)" },
+      }}
+    >
+      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
+        <DailyCheckinCalendar
+          value={checkinDateStr}
+          onChange={setCheckinDateStr}
+          accentColor={theme.logoGreen}
+          backgroundColor={theme.sidebarSelectedBg}
+        />
+        <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
+          Selected: {checkinDateStr}
+        </Typography>
+      </Box>
+      <Divider />
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          bgcolor: "#ecfdf5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: { xs: 1.5, sm: 2 },
+          cursor: "pointer",
+        }}
+        onClick={() => {
+          setSidebarView("add");
+          history.replace("/patient-dashboard");
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setSidebarView("add");
+            history.replace("/patient-dashboard");
+          }
+        }}
+        aria-label="Go to add entry page"
+      >
+        <Box
+          component="img"
+          src={siteLogo}
+          alt="Healthy Visit logo"
+          sx={{
+            width: "100%",
+            height: "100%",
+            maxHeight: "100%",
+            objectFit: "contain",
+            display: "block",
+            transformOrigin: "center center",
+            animation: `${logoWiggle} 2.4s ease-in-out infinite`,
+            "@media (prefers-reduced-motion: reduce)": {
+              animation: "none",
+            },
+          }}
+        />
+      </Box>
+    </Box>
+  );
+  const handleTopicSelect = (topicId) => {
+    if (recognitionRef.current && (recognitionActiveRef.current || recognitionStartingRef.current)) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.warn("Speech recognition stop failed", e);
+      }
+    }
+    setSelectedTopicId(topicId);
+    setChatMessages([]);
+    setChatInput("");
+    setLiveTranscript("");
+    setAnalyzeError(null);
+    setAnalysisResult(null);
+    setTopicRailCollapsed(true);
+  };
+
+  const handleMicToggle = () => {
+    if (!recognitionRef.current) return;
+    if (recognitionActiveRef.current || recognitionStartingRef.current || isListening) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.warn("Speech recognition stop failed", e);
+      }
+      return;
+    }
+    setLiveTranscript("");
+    recognitionStartingRef.current = true;
+    try {
+      recognitionRef.current.start();
+    } catch (e) {
+      recognitionStartingRef.current = false;
+      console.warn("Speech recognition start failed", e);
+    }
+  };
+
+  const handleAnalyzeTopic = (e) => {
     e?.preventDefault();
+    const text = (chatInput || "").trim();
+    if (!text || !selectedTopic) return;
+    setAnalyzeError(null);
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+    const userMessage = { role: "user", text };
+    const nextMessages = [...chatMessages, userMessage];
+    setChatMessages(nextMessages);
+    setChatInput("");
+    api
+      .post(`/analyze/${selectedTopic.id}`, {
+        patient_id: patientId,
+        date: formDate,
+        text,
+      })
+      .then((res) => {
+        const result = res.data || {};
+        setAnalysisResult(result);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: "Structured data extracted. Review the summary and confirm to save.",
+          },
+        ]);
+      })
+      .catch((err) => {
+        setAnalyzeError(err.response?.data?.detail || err.message || "Failed to analyze message");
+      })
+      .finally(() => setIsAnalyzing(false));
+  };
+
+  const handleConfirmSaveFromAnalysis = () => {
+    if (!analysisResult) return;
     setFormError(null);
-    setFormSubmitting(true);
+    setConfirmSaving(true);
+    const metricPayload = analysisResult.metric_payload || {};
     const payload = {
       patient_id: patientId,
       date: formDate,
-      steps: formValues.steps ? parseInt(formValues.steps, 10) : null,
-      sleep: formValues.sleep ? parseInt(formValues.sleep, 10) : null,
-      sleep_quality: formValues.sleep_quality ? parseInt(formValues.sleep_quality, 10) : null,
-      active_minutes: formValues.active_minutes ? parseInt(formValues.active_minutes, 10) : null,
-      nutrition_score: formValues.nutrition_score ? parseFloat(formValues.nutrition_score) : null,
-      stress_score: formValues.stress_score ? parseFloat(formValues.stress_score) : null,
-      mood_score: formValues.mood_score ? parseFloat(formValues.mood_score) : null,
+      ...metricPayload,
+      raw_data: JSON.stringify({
+        topic: selectedTopic?.id,
+        structured_data: analysisResult.structured_data || {},
+        chat_messages: chatMessages,
+      }),
     };
     api
       .post("/metrics", payload)
       .then(() => {
         refetchMetrics();
-        setFormValues({ steps: "", sleep: "", sleep_quality: "", active_minutes: "", nutrition_score: "", stress_score: "", mood_score: "" });
         setSidebarView("dashboard");
       })
-      .catch((err) => setFormError(err.response?.data?.detail || err.message || "Failed to add entry"))
-      .finally(() => setFormSubmitting(false));
+      .catch((err) => setFormError(err.response?.data?.detail || err.message || "Failed to save entry"))
+      .finally(() => setConfirmSaving(false));
   };
 
   const handleUpdateMetric = (id, updates) => {
@@ -576,19 +860,6 @@ export default function PatientDashboard() {
               <PlusCircle size={22} />
             </ListItemIcon>
             {sidebarOpen && <ListItemText primary="Add daily metrics" />}
-          </ListItemButton>
-          <ListItemButton
-            selected={sidebarView === "manage"}
-            onClick={() => {
-              setSidebarView("manage");
-              history.replace("/patient-dashboard");
-            }}
-            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
-          >
-            <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
-              <PencilSimple size={22} />
-            </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Manage entries" />}
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "statistics"}
@@ -785,110 +1056,424 @@ export default function PatientDashboard() {
       </Box>
         </Box>
 
-        <Box
-          sx={{
-            width: { xs: "100%", lg: 400 },
-            maxWidth: { xs: "100%", lg: 400 },
-            flexShrink: 0,
-            borderLeft: { lg: theme.border },
-            borderTop: { xs: theme.border, lg: "none" },
-            bgcolor: "#f0fdf4",
-            display: "flex",
-            flexDirection: "column",
-            minHeight: { xs: "min(70vh, 640px)", lg: 0 },
-            height: { lg: "100%" },
-            maxHeight: { lg: "100%" },
-            overflow: "hidden",
-            boxShadow: { lg: theme.cardShadow },
-          }}
-        >
-          <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
-            <DailyCheckinCalendar
-              value={checkinDateStr}
-              onChange={setCheckinDateStr}
-              accentColor={theme.logoGreen}
-              backgroundColor={theme.sidebarSelectedBg}
-            />
-            <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
-              Selected: {checkinDateStr}
-            </Typography>
-          </Box>
-          <Divider />
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              bgcolor: "#ecfdf5",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              p: { xs: 1.5, sm: 2 },
-            }}
-          >
-            <Box
-              component="img"
-              src={siteLogo}
-              alt=""
-              sx={{
-                width: "100%",
-                height: "100%",
-                maxHeight: "100%",
-                objectFit: "contain",
-                display: "block",
-                transformOrigin: "center center",
-                animation: `${logoWiggle} 2.4s ease-in-out infinite`,
-                "@media (prefers-reduced-motion: reduce)": {
-                  animation: "none",
-                },
-              }}
-            />
-          </Box>
-        </Box>
+        {rightSidePanel}
       </Box>
         )}
 
         {sidebarView === "add" && (
-          <Container maxWidth="sm" sx={{ py: 4 }}>
-            <Typography variant="h6" sx={{ mb: 2, color: theme.text }}>Add daily metrics</Typography>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: { xs: "column", lg: "row" },
+              width: "100%",
+              alignItems: "stretch",
+              flex: 1,
+              minHeight: 0,
+              bgcolor: theme.bg,
+              /* Fill viewport so flex children (chat vs composer) get a real height budget */
+              minHeight: "100vh",
+              height: { lg: "100vh" },
+              maxHeight: { lg: "100vh" },
+              overflow: { xs: "visible", lg: "hidden" },
+            }}
+          >
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 0,
+                overflowY: { xs: "auto", lg: "hidden" },
+                overflowX: "hidden",
+                height: { lg: "100%" },
+                display: "flex",
+                flexDirection: "column",
+                alignSelf: "stretch",
+              }}
+            >
+          <Container
+            maxWidth={false}
+            sx={{
+              width: "100%",
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              height: { lg: "100%" },
+              /* No top padding so chat/green panel aligns with top of main area */
+              pt: 0,
+              pb: 2,
+              px: { xs: 2, sm: 2.5 },
+            }}
+          >
             {formError && (
-              <Alert severity="error" onClose={() => setFormError(null)} sx={{ mb: 2 }}>{formError}</Alert>
+              <Alert severity="error" onClose={() => setFormError(null)} sx={{ mb: 2, mt: 0 }}>{formError}</Alert>
             )}
-            <Card sx={cardSx}>
-              <CardContent component="form" onSubmit={handleAddMetric}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12}>
-                    <TextField fullWidth label="Date" type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} InputLabelProps={{ shrink: true }} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Steps" type="number" value={formValues.steps} onChange={(e) => setFormValues((v) => ({ ...v, steps: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Sleep (hours)" type="number" value={formValues.sleep} onChange={(e) => setFormValues((v) => ({ ...v, sleep: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Sleep quality (1–10)" type="number" value={formValues.sleep_quality} onChange={(e) => setFormValues((v) => ({ ...v, sleep_quality: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Active minutes" type="number" value={formValues.active_minutes} onChange={(e) => setFormValues((v) => ({ ...v, active_minutes: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Nutrition score" type="number" value={formValues.nutrition_score} onChange={(e) => setFormValues((v) => ({ ...v, nutrition_score: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Stress score" type="number" value={formValues.stress_score} onChange={(e) => setFormValues((v) => ({ ...v, stress_score: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField fullWidth label="Mood score" type="number" value={formValues.mood_score} onChange={(e) => setFormValues((v) => ({ ...v, mood_score: e.target.value }))} />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Button type="submit" variant="contained" disabled={formSubmitting} sx={{ bgcolor: theme.primary, "&:hover": { bgcolor: theme.primary } }}>
-                      {formSubmitting ? "Saving…" : "Save entry"}
-                    </Button>
-                  </Grid>
+            {!selectedTopic ? (
+              <Card sx={{ ...cardSx, mt: 2 }}>
+                <CardContent>
+                  <Typography sx={{ color: theme.textMuted }}>
+                    Select a FANTASTIC topic from the right sidebar to start your conversational entry.
+                  </Typography>
+                </CardContent>
+              </Card>
+            ) : (
+              <Grid
+                container
+                spacing={0}
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  mt: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  /* Full-bleed chat column: undo Container horizontal padding for this block */
+                  mx: { xs: -2, sm: -2.5 },
+                  width: { xs: "calc(100% + 32px)", sm: "calc(100% + 40px)" },
+                  maxWidth: { xs: "calc(100% + 32px)", sm: "calc(100% + 40px)" },
+                }}
+              >
+                <Grid item xs={12} sx={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column", height: "100%" }}>
+                  <Card
+                    sx={{
+                      width: "100%",
+                      flex: 1,
+                      minHeight: 0,
+                      height: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      boxShadow: "none",
+                      borderRadius: 0,
+                      bgcolor: "transparent",
+                    }}
+                  >
+                    <CardContent
+                      sx={{
+                        width: "100%",
+                        height: "100%",
+                        flex: 1,
+                        minHeight: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        py: 0,
+                        px: 0,
+                        "&:last-child": { pb: 0 },
+                      }}
+                    >
+                      {/* White chat panel above composer; mic row stays on theme.bg */}
+                      <Box
+                        sx={{
+                          position: "relative",
+                          flex: "1 1 0",
+                          /* lg: flex chain; xs: fill viewport above mic when parent height is content-sized */
+                          minHeight: { xs: "calc(100dvh - 200px)", lg: 0 },
+                          width: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignSelf: "stretch",
+                          bgcolor: theme.bg,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* Tiled logos: grey (desaturated) on white */}
+                        <Box
+                          aria-hidden
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            zIndex: 0,
+                            pointerEvents: "none",
+                            opacity: ADD_ENTRY_CHAT.panelTileOpacity,
+                            filter: "grayscale(1)",
+                          }}
+                        >
+                          <svg width="100%" height="100%" style={{ display: "block" }}>
+                            <defs>
+                              <pattern
+                                id={addEntryPatternBrickA}
+                                width={ADD_ENTRY_TILE_PX}
+                                height={ADD_ENTRY_TILE_PX}
+                                patternUnits="userSpaceOnUse"
+                              >
+                                <image
+                                  href={siteLogo}
+                                  x={ADD_ENTRY_TILE_LOGO_OFFSET}
+                                  y={ADD_ENTRY_TILE_LOGO_OFFSET}
+                                  width={ADD_ENTRY_LOGO_IN_TILE_PX}
+                                  height={ADD_ENTRY_LOGO_IN_TILE_PX}
+                                  preserveAspectRatio="xMidYMid meet"
+                                />
+                              </pattern>
+                              <pattern
+                                id={addEntryPatternBrickB}
+                                width={ADD_ENTRY_TILE_PX}
+                                height={ADD_ENTRY_TILE_PX}
+                                patternUnits="userSpaceOnUse"
+                                patternTransform={`translate(${ADD_ENTRY_TILE_HALF}, ${ADD_ENTRY_TILE_HALF})`}
+                              >
+                                <image
+                                  href={siteLogo}
+                                  x={ADD_ENTRY_TILE_LOGO_OFFSET}
+                                  y={ADD_ENTRY_TILE_LOGO_OFFSET}
+                                  width={ADD_ENTRY_LOGO_IN_TILE_PX}
+                                  height={ADD_ENTRY_LOGO_IN_TILE_PX}
+                                  preserveAspectRatio="xMidYMid meet"
+                                />
+                              </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill={`url(#${addEntryPatternBrickA})`} />
+                            <rect width="100%" height="100%" fill={`url(#${addEntryPatternBrickB})`} />
+                          </svg>
+                        </Box>
+                        <Box
+                          sx={{
+                            position: "relative",
+                            zIndex: 1,
+                            flex: "1 1 auto",
+                            minHeight: 0,
+                            overflowY: "auto",
+                            p: { xs: 2, sm: 2.5 },
+                          }}
+                        >
+                        <Stack spacing={2}>
+                          {chatMessages.length === 0 && (
+                            <Typography variant="body1" sx={{ color: theme.textMuted, fontSize: "1.05rem", lineHeight: 1.6 }}>
+                              Speak or type freely. We will extract structured details for {selectedTopic.label.toLowerCase()}.
+                            </Typography>
+                          )}
+                          {chatMessages.map((m, idx) =>
+                            m.role === "assistant" ? (
+                              <Box
+                                key={`${m.role}-${idx}`}
+                                sx={{
+                                  display: "flex",
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 1.5,
+                                  justifyContent: "flex-start",
+                                }}
+                              >
+                                <Box
+                                  sx={{
+                                    width: 40,
+                                    height: 40,
+                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  <Box
+                                    component="img"
+                                    src={siteLogo}
+                                    alt=""
+                                    sx={{ width: 40, height: 40, objectFit: "contain", display: "block" }}
+                                  />
+                                </Box>
+                                <Box
+                                  sx={{
+                                    maxWidth: "min(92%, 640px)",
+                                    px: 2,
+                                    py: 1.5,
+                                    borderRadius: 2,
+                                    bgcolor: ADD_ENTRY_CHAT.assistantBubble,
+                                    border: ADD_ENTRY_CHAT.assistantBorder,
+                                    boxShadow: "0 1px 3px rgba(31,45,61,0.06)",
+                                  }}
+                                >
+                                  <Typography sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                    {m.text}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            ) : (
+                              <Box key={`${m.role}-${idx}`} sx={{ display: "flex", justifyContent: "flex-end" }}>
+                                <Box
+                                  sx={{
+                                    maxWidth: "min(88%, 560px)",
+                                    px: 2,
+                                    py: 1.5,
+                                    borderRadius: 2,
+                                    bgcolor: ADD_ENTRY_CHAT.userBubble(theme.primary),
+                                    border: ADD_ENTRY_CHAT.userBorder(theme.primary),
+                                  }}
+                                >
+                                  <Typography sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                    {m.text}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            )
+                          )}
+                          {liveTranscript && (
+                            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                              <Box
+                                sx={{
+                                  maxWidth: "min(88%, 560px)",
+                                  px: 2,
+                                  py: 1.25,
+                                  borderRadius: 2,
+                                  bgcolor: ADD_ENTRY_CHAT.liveBg,
+                                  border: ADD_ENTRY_CHAT.liveBorder,
+                                }}
+                              >
+                                <Typography sx={{ fontSize: "1rem", color: theme.textMuted }}>
+                                  Listening: {liveTranscript}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          )}
+                        </Stack>
+                        </Box>
+                      </Box>
+
+                      {analyzeError && (
+                        <Alert severity="error" sx={{ mx: 2, mt: 1, mb: 0, flexShrink: 0 }}>
+                          {analyzeError}
+                        </Alert>
+                      )}
+
+                      <Box
+                        component="form"
+                        onSubmit={handleAnalyzeTopic}
+                        sx={{
+                          flexShrink: 0,
+                          pt: 2,
+                          pb: 2,
+                          px: { xs: 2, sm: 2.5 },
+                          bgcolor: theme.bg,
+                          display: "flex",
+                          gap: 1.5,
+                          alignItems: "center",
+                        }}
+                      >
+                        <IconButton
+                          size="large"
+                          onClick={handleMicToggle}
+                          disabled={!speechRecognitionSupported}
+                          sx={{
+                            width: 52,
+                            height: 52,
+                            bgcolor: isListening ? alpha(theme.danger, 0.18) : "#f8fafc",
+                            border: "1px solid",
+                            borderColor: isListening ? alpha(theme.danger, 0.55) : "#e2e8f0",
+                            color: isListening ? theme.danger : "rgba(31, 45, 61, 0.65)",
+                            "&:hover": {
+                              bgcolor: isListening ? alpha(theme.danger, 0.26) : "#f1f5f9",
+                            },
+                          }}
+                          title={speechRecognitionSupported ? "Toggle microphone" : "Speech recognition is not supported in this browser"}
+                        >
+                          <Microphone size={28} weight="duotone" />
+                        </IconButton>
+                        <TextField
+                          fullWidth
+                          size="medium"
+                          placeholder={`Share your ${selectedTopic.label.toLowerCase()} details...`}
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          sx={{
+                            "& .MuiOutlinedInput-root": {
+                              borderRadius: 2.5,
+                              bgcolor: "#fff",
+                              minHeight: 52,
+                              fontSize: "1.05rem",
+                              py: 0.5,
+                            },
+                            "& .MuiOutlinedInput-input": {
+                              py: 1.25,
+                            },
+                          }}
+                        />
+                        <IconButton
+                          type="submit"
+                          size="large"
+                          disabled={isAnalyzing || !chatInput.trim()}
+                          sx={{ width: 52, height: 52 }}
+                        >
+                          <PaperPlaneTilt size={28} weight="duotone" />
+                        </IconButton>
+                      </Box>
+                    </CardContent>
+                  </Card>
                 </Grid>
-              </CardContent>
-            </Card>
+              </Grid>
+            )}
           </Container>
+            </Box>
+            <Box
+              onMouseEnter={() => setTopicRailHover(true)}
+              onMouseLeave={() => setTopicRailHover(false)}
+              sx={{
+                width: { xs: "100%", lg: topicRailNarrow ? 76 : 280 },
+                minWidth: { xs: "100%", lg: topicRailNarrow ? 76 : 280 },
+                maxWidth: { xs: "100%", lg: topicRailNarrow ? 76 : 280 },
+                borderLeft: { lg: theme.border },
+                borderTop: { xs: theme.border, lg: "none" },
+                bgcolor: "transparent",
+                p: 0,
+                minHeight: { xs: "auto", lg: 0 },
+                height: { lg: "100%" },
+                maxHeight: { lg: "100%" },
+                display: "flex",
+                flexDirection: "column",
+                overflowY: "auto",
+                transition: {
+                  xs: "none",
+                  lg: "width 0.38s ease-in-out, min-width 0.38s ease-in-out, max-width 0.38s ease-in-out",
+                },
+                boxShadow: { lg: "inset -8px 0 14px -10px rgba(31,45,61,0.28)" },
+                position: "relative",
+                zIndex: 1,
+              }}
+            >
+              <Stack spacing={0} sx={{ width: "100%", minHeight: { lg: "100%" }, flex: { lg: 1 } }}>
+                {ADD_ENTRY_TOPICS.map((topic) => {
+                  const Icon = topic.Icon;
+                  const selected = selectedTopicId === topic.id;
+                  const accent = addTopicPalette[ADD_ENTRY_TOPICS.indexOf(topic) % addTopicPalette.length];
+                  return (
+                    <Card
+                      key={topic.id}
+                      onClick={() => handleTopicSelect(topic.id)}
+                      sx={{
+                        width: "100%",
+                        flex: { lg: 1 },
+                        cursor: "pointer",
+                        borderRadius: 0,
+                        border: "1px solid transparent",
+                        boxShadow: "none",
+                        bgcolor: selected ? alpha(accent, 0.34) : alpha(accent, 0.08),
+                        "&:hover": {
+                          bgcolor: selected ? alpha(accent, 0.4) : alpha(accent, 0.16),
+                        },
+                      }}
+                    >
+                      <CardContent
+                        sx={{
+                          py: topicRailNarrow ? 1.2 : 1.5,
+                          "&:last-child": { pb: topicRailNarrow ? 1.2 : 1.5 },
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: topicRailNarrow ? "center" : "flex-start",
+                          gap: topicRailNarrow ? 0 : 1,
+                        }}
+                      >
+                        <Icon size={topicRailNarrow ? 26 : 24} color={accent} />
+                        {!topicRailNarrow && (
+                          <Typography sx={{ color: selected ? accent : theme.text, fontWeight: selected ? 700 : 500, fontSize: "1rem", lineHeight: 1.25 }}>
+                            {topic.label}
+                          </Typography>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </Stack>
+            </Box>
+            {rightSidePanel}
+          </Box>
         )}
 
         {sidebarView === "statistics" && (
@@ -1107,7 +1692,7 @@ export default function PatientDashboard() {
           </Container>
         )}
         {sidebarView === "profile" && (
-          <ProfileFormContent embedded accentPrimary={theme.primary} />
+          <ProfileFormContent embedded accentPrimary={theme.logoGreen} />
         )}
     </DashboardShell>
   );

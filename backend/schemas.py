@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from datetime import date
 
 
@@ -104,6 +104,19 @@ class MetricsResponse(BaseModel):
     raw_data: Optional[str] = None
     sleep_quality: Optional[int] = None
     is_smoking: Optional[bool] = None
+
+
+class TopicAnalyzeRequest(BaseModel):
+    patient_id: int
+    date: date
+    text: str
+    history: Optional[list[dict[str, str]]] = None
+
+
+class TopicAnalyzeResponse(BaseModel):
+    topic: str
+    structured_data: dict[str, Any]
+    metric_payload: dict[str, Any]
 
 
 # --- FANTASTIC daily AI check-in ---

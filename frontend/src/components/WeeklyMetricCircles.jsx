@@ -257,6 +257,15 @@ function SimpleWeeklyLineChart({ data, color, yMax, theme, geo, highlightDate, r
       preserveAspectRatio="none"
       style={{ display: "block" }}
     >
+      <rect
+        x={pad.l}
+        y={pad.t}
+        width={innerW}
+        height={innerH}
+        rx={8}
+        fill="#fff"
+        pointerEvents="none"
+      />
       {gridLines.map((g, i) => (
         <line
           key={`g-${i}`}
@@ -427,6 +436,15 @@ function MultiNormalizedLineChart({ seriesList, theme, geo, highlightDate, rowsB
       preserveAspectRatio="none"
       style={{ display: "block" }}
     >
+      <rect
+        x={pad.l}
+        y={pad.t}
+        width={innerW}
+        height={innerH}
+        rx={8}
+        fill="#fff"
+        pointerEvents="none"
+      />
       {yTicks.map((t, i) => (
         <line
           key={`g-${i}`}
@@ -722,7 +740,16 @@ export default function WeeklyMetricCircles({
                   No data for this period yet.
                 </Typography>
               ) : (
-                <Box ref={chartAreaRef} sx={{ flex: 1, minHeight: 200, width: "100%", display: "flex", flexDirection: "column" }}>
+                <Box
+                  ref={chartAreaRef}
+                  sx={{
+                    flex: 1,
+                    minHeight: 200,
+                    width: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
                   <MultiNormalizedLineChart
                     seriesList={multiSeries}
                     theme={theme}
