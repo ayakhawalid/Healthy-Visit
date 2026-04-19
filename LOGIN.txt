@@ -1,0 +1,11 @@
+# Login for this app
+
+## Default admin (from template)
+Username: admin
+Password: asd123
+
+## Or register a new user
+Use the Sign up page, then log in with your email/username.
+
+Frontend: http://localhost:3000
+API docs: http://localhost:9999/api/docs

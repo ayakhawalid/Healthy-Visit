@@ -30,7 +30,8 @@ DailyMetrics = Table('DailyMetrics', meta,
     Column('cigarettes_per_day', Float, nullable=True),
     Column('is_smoking', Boolean, nullable=True),
     Column('mood_score', Float, nullable=True),
-    Column('work_satisfaction', Float, nullable=True) 
+    Column('work_satisfaction', Float, nullable=True),
+    Column('lifestyle_radar_json', String, nullable=True),
 )
 
 # Stores generic patient info collected in onboarding.
@@ -69,6 +70,23 @@ FantasticDailyScores = Table('FantasticDailyScores', meta,
     Column('percentage', Float, nullable=False),
     Column('grade_label', String, nullable=False),
     Column('domains_json', String, nullable=True),
+)
+
+# Official lifestyle questionnaire (שאלון הערכת התנהגויות בריאות) — answers + gentle drip tracking
+LifestyleQuestionnaireAnswers = Table('LifestyleQuestionnaireAnswers', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('question_id', String, nullable=False),
+    Column('value_json', String, nullable=False),
+    Column('answered_at', Date, nullable=False),
+)
+
+LifestyleQuestionnairePrompts = Table('LifestyleQuestionnairePrompts', meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id')),
+    Column('question_id', String, nullable=False),
+    Column('prompted_date', Date, nullable=False),
+    Column('answered', Boolean, nullable=False, default=False),
 )
 
 meta.create_all(engine)

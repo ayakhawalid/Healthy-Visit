@@ -82,7 +82,7 @@ export const registerResearcher = async (payload: { username: string; email: str
   } catch (err: any) {
     if (err.response?.status === 404) {
       throw new Error(
-        "Researcher API not found (404). Open http://127.0.0.1:9999/health — you should see tag hv-health-v2. If you still see Not Found, stop all Python on port 9999 and run: python server.py from the backend folder."
+        "Researcher API not found (404). Open http://127.0.0.1:9999/health — you should see tag hv-health-v4 plus server_py and openai_configured. If you still see Not Found or an old tag, stop all Python on port 9999 and run: python server.py from the backend folder."
       );
     }
     const msg =

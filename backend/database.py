@@ -27,6 +27,11 @@ def _migrate_sqlite_columns():
             if "study_start_date" not in pp_cols:
                 conn.execute(text("ALTER TABLE PatientProfile ADD COLUMN study_start_date DATE"))
                 conn.commit()
+        if insp.has_table("DailyMetrics"):
+            dm_cols = {c["name"] for c in insp.get_columns("DailyMetrics")}
+            if "lifestyle_radar_json" not in dm_cols:
+                conn.execute(text("ALTER TABLE DailyMetrics ADD COLUMN lifestyle_radar_json VARCHAR"))
+                conn.commit()
     except Exception:
         pass
 

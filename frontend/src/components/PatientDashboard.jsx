@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Card,
@@ -33,6 +33,7 @@ import {
   Microphone,
   PaperPlaneTilt,
   UsersThree,
+  ChatCircle,
 } from "@phosphor-icons/react";
 import DailyCheckinCalendar from "./DailyCheckinCalendar";
 import WeeklyMetricCircles from "./WeeklyMetricCircles";
@@ -122,16 +123,6 @@ const sidebarNavSelectedSx = {
   },
 };
 
-/** Demo values for the six “Today” donut rings when `today` has no value for that field */
-const DEMO_DONUT_TODAY = {
-  steps: 6840,
-  sleep: 6.5,
-  nutrition: 78,
-  cigarettes_per_day: 1,
-  stress_score: 4,
-  mood: 7,
-};
-
 const ADD_ENTRY_TOPICS = [
   { id: "family-friends", label: "Family & Friends", Icon: UsersThree },
   { id: "activity", label: "Activity", Icon: Sneaker },
@@ -147,7 +138,7 @@ const ADD_ENTRY_TOPICS = [
 /** Web Speech API language for the mic (Hebrew only). */
 const SPEECH_RECOGNITION_LANG = "he-IL";
 
-/** Human-readable Today donut stat line. Nutrition `78/100`; stress and mood `7/10`. */
+/** Human-readable Today donut stat line. Lifestyle domains use 0–100. */
 function formatTodayMetricValue(key, value) {
   if (typeof value !== "number" || Number.isNaN(value)) return "—";
   switch (key) {
@@ -159,12 +150,18 @@ function formatTodayMetricValue(key, value) {
       return `${text} hour${rounded === 1 ? "" : "s"}`;
     }
     case "nutrition":
+    case "physical_activity":
+    case "sleep_domain":
+    case "stress":
+    case "mental_health":
+    case "social_support":
+    case "controlled_eating":
+    case "substance":
       return `${Math.round(value)}/100`;
     case "smoking":
       if (value === 0) return "0 cigarettes";
       if (value === 1) return "1 cigarette";
       return `${value % 1 === 0 ? value : value.toFixed(1)} cigarettes`;
-    case "stress":
     case "mood": {
       const s = value % 1 === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
       return `${s}/10`;
@@ -174,10 +171,125 @@ function formatTodayMetricValue(key, value) {
   }
 }
 
-/** Today donut `key` → WeeklyMetricCircles metric id (`steps` → `activity`). */
-function todayKeyToWeeklyMetricId(key) {
-  if (key === "steps") return "activity";
-  return key;
+function mergeLifestyleRadarIntoRow(row) {
+  if (!row || !row.lifestyle_radar_json) return row;
+  try {
+    const arr =
+      typeof row.lifestyle_radar_json === "string" ? JSON.parse(row.lifestyle_radar_json) : row.lifestyle_radar_json;
+    if (!Array.isArray(arr)) return row;
+    const extra = {};
+    arr.forEach((d) => {
+      if (d && d.key && typeof d.score === "number" && !Number.isNaN(d.score)) {
+        extra[`lr_${d.key}`] = d.score;
+      }
+    });
+    return { ...row, ...extra };
+  } catch (e) {
+    return row;
+  }
+}
+
+function buildLifestyleChartDefinitions(theme) {
+  return [
+    { id: "lr_nutrition", title: "תזונה", field: "lr_nutrition", yMax: 100, color: theme.metric.nutrition, unit: "/100" },
+    { id: "lr_physical_activity", title: "פעילות", field: "lr_physical_activity", yMax: 100, color: theme.metric.steps, unit: "/100" },
+    { id: "lr_sleep", title: "שינה", field: "lr_sleep", yMax: 100, color: theme.metric.sleep, unit: "/100" },
+    { id: "lr_stress", title: "סטרס", field: "lr_stress", yMax: 100, color: theme.snapshotIcon.stressSocial, unit: "/100" },
+    { id: "lr_mental_health", title: "נפש", field: "lr_mental_health", yMax: 100, color: theme.metric.mood, unit: "/100" },
+    { id: "lr_social_support", title: "תמיכה", field: "lr_social_support", yMax: 100, color: "#0d9488", unit: "/100" },
+    { id: "lr_controlled_eating", title: "אכילה", field: "lr_controlled_eating", yMax: 100, color: "#ca8a04", unit: "/100" },
+    { id: "lr_smoke_free", title: "ללא עישון", field: "lr_smoke_free", yMax: 100, color: theme.snapshotIcon.smoking, unit: "/100" },
+    { id: "lr_alcohol_free", title: "ללא אלכוהול", field: "lr_alcohol_free", yMax: 100, color: "#7c3aed", unit: "/100" },
+    { id: "lr_motivation", title: "מוטיבציה", field: "lr_motivation", yMax: 100, color: theme.logoGreen, unit: "/100" },
+  ];
+}
+
+/** Eight dashboard tiles: Excel radar merges עישון+אלכוהול; מוטיבציה appears in the 10-line chart only. */
+function buildEightLifestyleDonuts(row, theme) {
+  const pick = (k) =>
+    typeof row[`lr_${k}`] === "number" && !Number.isNaN(row[`lr_${k}`]) ? row[`lr_${k}`] : null;
+  const subAvg = (a, b) => {
+    const x = pick(a);
+    const y = pick(b);
+    if (x == null && y == null) return null;
+    if (x == null) return y;
+    if (y == null) return x;
+    return (x + y) / 2;
+  };
+  return [
+    {
+      key: "nutrition",
+      chartId: "lr_nutrition",
+      label: "תזונה",
+      value: pick("nutrition"),
+      max: 100,
+      Icon: ForkKnife,
+      color: theme.metric.nutrition,
+    },
+    {
+      key: "physical_activity",
+      chartId: "lr_physical_activity",
+      label: "פעילות",
+      value: pick("physical_activity"),
+      max: 100,
+      Icon: Sneaker,
+      color: theme.metric.steps,
+    },
+    {
+      key: "sleep_domain",
+      chartId: "lr_sleep",
+      label: "שינה",
+      value: pick("sleep"),
+      max: 100,
+      Icon: MoonStars,
+      color: theme.metric.sleep,
+    },
+    {
+      key: "stress",
+      chartId: "lr_stress",
+      label: "סטרס",
+      value: pick("stress"),
+      max: 100,
+      Icon: Brain,
+      color: theme.snapshotIcon.stressSocial,
+    },
+    {
+      key: "mental_health",
+      chartId: "lr_mental_health",
+      label: "בריאות נפשית",
+      value: pick("mental_health"),
+      max: 100,
+      Icon: Smiley,
+      color: theme.metric.mood,
+    },
+    {
+      key: "social_support",
+      chartId: "lr_social_support",
+      label: "תמיכה",
+      value: pick("social_support"),
+      max: 100,
+      Icon: UsersThree,
+      color: "#0d9488",
+    },
+    {
+      key: "controlled_eating",
+      chartId: "lr_controlled_eating",
+      label: "אכילה מבוקרת",
+      value: pick("controlled_eating"),
+      max: 100,
+      Icon: ForkKnife,
+      color: "#ca8a04",
+    },
+    {
+      key: "substance",
+      chartId: null,
+      label: "עישון / אלכוהול",
+      value: subAvg("smoke_free", "alcohol_free"),
+      max: 100,
+      Icon: Cigarette,
+      color: theme.snapshotIcon.smoking,
+    },
+  ];
 }
 
 // Donut chart: value vs max (0–1). Optional centerLabel or centerIcon in the middle.
@@ -317,6 +429,13 @@ export default function PatientDashboard() {
   const [checkinDateStr, setCheckinDateStr] = useState(() => new Date().toISOString().slice(0, 10));
   /** null = all metrics on weekly chart; otherwise matches WeeklyMetricCircles ids (activity, sleep, …) */
   const [weeklyChartMetricId, setWeeklyChartMetricId] = useState(null);
+  /** Official questionnaire (daily drip) */
+  const [officialProgress, setOfficialProgress] = useState(null);
+  const [officialQuestionQueue, setOfficialQuestionQueue] = useState([]);
+  const [officialQuestionIndex, setOfficialQuestionIndex] = useState(0);
+  const [officialQInput, setOfficialQInput] = useState("");
+  const [officialQLoading, setOfficialQLoading] = useState(false);
+  const [officialQError, setOfficialQError] = useState(null);
 
   /** Stable unique SVG pattern ids (React 17 has no useId) */
   const addEntryWallpaperKey = useMemo(() => `w${Math.random().toString(36).slice(2, 11)}`, []);
@@ -359,7 +478,32 @@ export default function PatientDashboard() {
 
   const patientId = user?.id;
 
-  const refetchMetrics = () => {
+  const loadOfficialQuestionnaire = useCallback(() => {
+    if (patientId == null) return;
+    const chatLang =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("patient_chat_language") || "he"
+        : "he";
+    api
+      .get("/official-questionnaire/progress", { params: { patient_id: patientId } })
+      .then((r) => setOfficialProgress(r.data))
+      .catch(() => setOfficialProgress(null));
+    api
+      .get("/official-questionnaire/daily", {
+        params: { patient_id: patientId, language: chatLang },
+      })
+      .then((r) => {
+        const qs = r.data.questions || [];
+        setOfficialQuestionQueue(qs);
+        setOfficialQuestionIndex(0);
+      })
+      .catch(() => {
+        setOfficialQuestionQueue([]);
+        setOfficialQuestionIndex(0);
+      });
+  }, [patientId]);
+
+  const refetchMetrics = useCallback(() => {
     if (patientId == null) return;
     api
       .get("/metrics", { params: { patient_id: patientId } })
@@ -375,7 +519,7 @@ export default function PatientDashboard() {
         console.warn("Failed to fetch metrics", err);
         setMetrics([]);
       });
-  };
+  }, [patientId]);
 
   // 2) Ensure today’s metric row exists (partial onboarding / sync), then load metrics
   useEffect(() => {
@@ -403,15 +547,30 @@ export default function PatientDashboard() {
         console.warn("Failed to fetch metrics", err);
         setMetrics([]);
       })
-      .finally(() => setLoading(false));
-  }, [authChecked, patientId]);
+      .finally(() => {
+        setLoading(false);
+        loadOfficialQuestionnaire();
+      });
+  }, [authChecked, patientId, loadOfficialQuestionnaire]);
+
+  useEffect(() => {
+    if (sidebarView !== "dashboard" || patientId == null) return;
+    loadOfficialQuestionnaire();
+  }, [sidebarView, patientId, loadOfficialQuestionnaire]);
+
+  const metricsWithRadar = useMemo(
+    () => metrics.map((row) => mergeLifestyleRadarIntoRow(normalizeRow(row))),
+    [metrics]
+  );
+
+  const lifestyleChartDefs = useMemo(() => buildLifestyleChartDefinitions(theme), []);
 
   const { today, week1, week2, week3, last21 } = useMemo(() => {
     if (patientId == null) {
       return { today: null, week1: [], week2: [], week3: [], last21: [] };
     }
-    if (!metrics.length) {
-      const placeholder = emptyTodayRow(patientId);
+    if (!metricsWithRadar.length) {
+      const placeholder = mergeLifestyleRadarIntoRow(emptyTodayRow(patientId));
       return {
         today: placeholder,
         week1: [],
@@ -420,70 +579,18 @@ export default function PatientDashboard() {
         last21: [placeholder],
       };
     }
-    const last21 = metrics.slice(-21);
-    const today = last21[last21.length - 1] || null;
-    const week1 = last21.slice(0, 7);
-    const week2 = last21.slice(7, 14);
-    const week3 = last21.slice(14, 21);
-    return { today, week1, week2, week3, last21 };
-  }, [metrics, patientId]);
+    const last21m = metricsWithRadar.slice(-21);
+    const todayRow = last21m[last21m.length - 1] || null;
+    const week1m = last21m.slice(0, 7);
+    const week2m = last21m.slice(7, 14);
+    const week3m = last21m.slice(14, 21);
+    return { today: todayRow, week1: week1m, week2: week2m, week3: week3m, last21: last21m };
+  }, [metricsWithRadar, patientId]);
 
-  /** Same six metrics + icons as WeeklyMetricCircles — values from `today` row or demo fallbacks */
+  /** Eight lifestyle domains (0–100), aligned with Excel radar; עישון+אלכוהול merged for the snapshot. */
   const todayDonutMetrics = useMemo(() => {
     if (!today) return [];
-    const d = DEMO_DONUT_TODAY;
-    const pick = (field, demoVal) =>
-      typeof today[field] === "number" && !Number.isNaN(today[field]) ? today[field] : demoVal;
-    return [
-      {
-        key: "steps",
-        label: "Activity",
-        value: pick("steps", d.steps),
-        max: 10000,
-        Icon: Sneaker,
-        color: theme.metric.steps,
-      },
-      {
-        key: "sleep",
-        label: "Sleep",
-        value: pick("sleep", d.sleep),
-        max: 8,
-        Icon: MoonStars,
-        color: theme.metric.sleep,
-      },
-      {
-        key: "nutrition",
-        label: "Nutrition",
-        value: pick("nutrition_score", d.nutrition),
-        max: 100,
-        Icon: ForkKnife,
-        color: theme.metric.nutrition,
-      },
-      {
-        key: "smoking",
-        label: "Smoking",
-        value: pick("cigarettes_per_day", d.cigarettes_per_day),
-        max: 20,
-        Icon: Cigarette,
-        color: theme.snapshotIcon.smoking,
-      },
-      {
-        key: "stress",
-        label: "Stress",
-        value: pick("stress_score", d.stress_score),
-        max: 10,
-        Icon: Brain,
-        color: theme.snapshotIcon.stressSocial,
-      },
-      {
-        key: "mood",
-        label: "Mood",
-        value: pick("mood_score", d.mood),
-        max: 10,
-        Icon: Smiley,
-        color: theme.metric.mood,
-      },
-    ];
+    return buildEightLifestyleDonuts(today, theme);
   }, [today]);
 
   const selectedTopic = useMemo(
@@ -630,82 +737,6 @@ export default function PatientDashboard() {
     theme.metric.sleep,
     theme.metric.nutrition,
   ];
-  const rightSidePanel = (
-    <Box
-      sx={{
-        width: { xs: "100%", lg: 400 },
-        maxWidth: { xs: "100%", lg: 400 },
-        flexShrink: 0,
-        borderLeft: "none",
-        borderTop: "none",
-        bgcolor: "#f0fdf4",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: { xs: "min(70vh, 640px)", lg: 0 },
-        height: { lg: "100%" },
-        maxHeight: { lg: "100%" },
-        overflow: "hidden",
-        boxShadow: { lg: "-12px 0 18px -14px rgba(31,45,61,0.35)" },
-      }}
-    >
-      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
-        <DailyCheckinCalendar
-          value={checkinDateStr}
-          onChange={setCheckinDateStr}
-          accentColor={theme.logoGreen}
-          backgroundColor={theme.sidebarSelectedBg}
-        />
-        <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
-          Selected: {checkinDateStr}
-        </Typography>
-      </Box>
-      <Divider />
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          bgcolor: "#ecfdf5",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          p: { xs: 1.5, sm: 2 },
-          cursor: "pointer",
-        }}
-        onClick={() => {
-          setSidebarView("add");
-          history.replace("/patient-dashboard");
-        }}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setSidebarView("add");
-            history.replace("/patient-dashboard");
-          }
-        }}
-        aria-label="Go to add entry page"
-      >
-        <Box
-          component="img"
-          src={siteLogo}
-          alt="Healthy Visit logo"
-          sx={{
-            width: "100%",
-            height: "100%",
-            maxHeight: "100%",
-            objectFit: "contain",
-            display: "block",
-            transformOrigin: "center center",
-            animation: `${logoWiggle} 2.4s ease-in-out infinite`,
-            "@media (prefers-reduced-motion: reduce)": {
-              animation: "none",
-            },
-          }}
-        />
-      </Box>
-    </Box>
-  );
   const handleTopicSelect = (topicId) => {
     if (recognitionRef.current && (recognitionActiveRef.current || recognitionStartingRef.current)) {
       try {
@@ -820,6 +851,166 @@ export default function PatientDashboard() {
       .catch((err) => console.warn(err));
   };
 
+  const handleOfficialQuestionnaireSubmit = (e) => {
+    e?.preventDefault();
+    const q = officialQuestionQueue[officialQuestionIndex];
+    const text = (officialQInput || "").trim();
+    if (!patientId || !q || !text) return;
+    setOfficialQError(null);
+    setOfficialQLoading(true);
+    api
+      .post("/official-questionnaire/answer", {
+        patient_id: patientId,
+        question_id: q.question_id,
+        user_message: text,
+      })
+      .then(() => {
+        setOfficialQInput("");
+        if (officialQuestionIndex + 1 < officialQuestionQueue.length) {
+          setOfficialQuestionIndex((i) => i + 1);
+        } else {
+          setOfficialQuestionIndex(0);
+          loadOfficialQuestionnaire();
+        }
+        refetchMetrics();
+        api
+          .get("/official-questionnaire/progress", { params: { patient_id: patientId } })
+          .then((r) => setOfficialProgress(r.data))
+          .catch(() => {});
+      })
+      .catch((err) => {
+        setOfficialQError(err.response?.data?.detail || err.message || "Failed to save answer");
+      })
+      .finally(() => setOfficialQLoading(false));
+  };
+
+  const rightSidePanel = (
+    <Box
+      sx={{
+        width: { xs: "100%", lg: 400 },
+        maxWidth: { xs: "100%", lg: 400 },
+        flexShrink: 0,
+        borderLeft: "none",
+        borderTop: "none",
+        bgcolor: "#f0fdf4",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: { xs: "min(70vh, 640px)", lg: 0 },
+        height: { lg: "100%" },
+        maxHeight: { lg: "100%" },
+        overflow: "hidden",
+        boxShadow: { lg: "-12px 0 18px -14px rgba(31,45,61,0.35)" },
+      }}
+    >
+      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: theme.text, mb: 0.5 }}>
+          שאלון יומי · Daily questions
+        </Typography>
+        {officialProgress != null && (
+          <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mb: 1 }}>
+            התקדמות: {officialProgress.answered_count}/{officialProgress.total_primary}
+          </Typography>
+        )}
+        {officialQError && (
+          <Alert severity="error" sx={{ mb: 1 }} onClose={() => setOfficialQError(null)}>
+            {officialQError}
+          </Alert>
+        )}
+        {officialQuestionQueue.length > 0 && officialQuestionQueue[officialQuestionIndex] ? (
+          <Stack component="form" onSubmit={handleOfficialQuestionnaireSubmit} spacing={1}>
+            <Typography variant="body2" sx={{ color: theme.text, lineHeight: 1.45 }}>
+              {officialQuestionQueue[officialQuestionIndex].conversational_prompt ||
+                officialQuestionQueue[officialQuestionIndex].hebrew}
+            </Typography>
+            {officialQuestionQueue[officialQuestionIndex].options?.length ? (
+              <Typography variant="caption" sx={{ color: theme.textMuted, display: "block" }}>
+                {officialQuestionQueue[officialQuestionIndex].options.join(" · ")}
+              </Typography>
+            ) : null}
+            <TextField
+              value={officialQInput}
+              onChange={(e) => setOfficialQInput(e.target.value)}
+              placeholder="תשובה חופשית"
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+              disabled={officialQLoading}
+            />
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={officialQLoading || !officialQInput.trim()}
+              sx={{ bgcolor: theme.logoGreen, alignSelf: "flex-start", textTransform: "none" }}
+            >
+              {officialQLoading ? "שולח…" : "שליחה"}
+            </Button>
+          </Stack>
+        ) : (
+          <Typography variant="caption" sx={{ color: theme.textMuted }}>
+            אין שאלות חדשות כרגע — נחזור עם שאלות קצרות בימים הקרובים.
+          </Typography>
+        )}
+      </Box>
+      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
+        <DailyCheckinCalendar
+          value={checkinDateStr}
+          onChange={setCheckinDateStr}
+          accentColor={theme.logoGreen}
+          backgroundColor={theme.sidebarSelectedBg}
+        />
+        <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
+          Selected: {checkinDateStr}
+        </Typography>
+      </Box>
+      <Divider />
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          bgcolor: "#ecfdf5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: { xs: 1.5, sm: 2 },
+          cursor: "pointer",
+        }}
+        onClick={() => {
+          setSidebarView("add");
+          history.replace("/patient-dashboard");
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setSidebarView("add");
+            history.replace("/patient-dashboard");
+          }
+        }}
+        aria-label="Go to add entry page"
+      >
+        <Box
+          component="img"
+          src={siteLogo}
+          alt="Healthy Visit logo"
+          sx={{
+            width: "100%",
+            height: "100%",
+            maxHeight: "100%",
+            objectFit: "contain",
+            display: "block",
+            transformOrigin: "center center",
+            animation: `${logoWiggle} 2.4s ease-in-out infinite`,
+            "@media (prefers-reduced-motion: reduce)": {
+              animation: "none",
+            },
+          }}
+        />
+      </Box>
+    </Box>
+  );
+
   return (
     <DashboardShell
       user={user}
@@ -873,6 +1064,21 @@ export default function PatientDashboard() {
               <ChartBar size={22} />
             </ListItemIcon>
             {sidebarOpen && <ListItemText primary="Statistics" />}
+          </ListItemButton>
+          <ListItemButton
+            disabled={patientId == null}
+            onClick={() => {
+              if (patientId == null) return;
+              localStorage.setItem("onboarding_patient_id", String(patientId));
+              localStorage.removeItem("onboarding_language_choice");
+              history.push("/onboarding");
+            }}
+            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
+          >
+            <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
+              <ChatCircle size={22} />
+            </ListItemIcon>
+            {sidebarOpen && <ListItemText primary="Onboarding" />}
           </ListItemButton>
           <ListItemButton disabled sx={{ opacity: 0.7, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}>
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -934,16 +1140,19 @@ export default function PatientDashboard() {
               mt: 0,
             }}
           >
-            Today
+            היום · 8 תחומי בריאות (0–100)
+          </Typography>
+          <Typography variant="caption" sx={{ display: "block", color: theme.textMuted, mb: 1 }}>
+            מבוסס על שאלון אורח החיים ועל גיליון הרדאר באקסל (עישון ואלכוהול משולבים; מוטיבציה בגרף 10 הקווים).
           </Typography>
           <Grid container spacing={2}>
             {todayDonutMetrics.map((m) => {
               const Icon = m.Icon;
               const displayValue = formatTodayMetricValue(m.key, m.value);
-              const weeklyId = todayKeyToWeeklyMetricId(m.key);
-              const isWeeklySelected = weeklyChartMetricId === weeklyId;
+              const weeklyId = m.chartId;
+              const isWeeklySelected = weeklyId != null && weeklyChartMetricId === weeklyId;
               return (
-                <Grid item xs={6} sm={4} md={2} key={m.key}>
+                <Grid item xs={6} sm={4} md={3} key={m.key}>
                   <Card
                     elevation={0}
                     sx={{
@@ -951,12 +1160,20 @@ export default function PatientDashboard() {
                       cursor: "pointer",
                       "&:focus-visible": { outline: `2px solid ${m.color}`, outlineOffset: 2 },
                     }}
-                    onClick={() =>
-                      setWeeklyChartMetricId((prev) => (prev === weeklyId ? null : weeklyId))
-                    }
+                    onClick={() => {
+                      if (weeklyId == null) {
+                        setWeeklyChartMetricId(null);
+                        return;
+                      }
+                      setWeeklyChartMetricId((prev) => (prev === weeklyId ? null : weeklyId));
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
+                        if (weeklyId == null) {
+                          setWeeklyChartMetricId(null);
+                          return;
+                        }
                         setWeeklyChartMetricId((prev) => (prev === weeklyId ? null : weeklyId));
                       }
                     }}
@@ -1045,6 +1262,9 @@ export default function PatientDashboard() {
           boxSizing: "border-box",
         }}
       >
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.text, mb: 0.5 }}>
+          מגמות — 10 תחומים (0–100, שאלון / אקסל)
+        </Typography>
         <WeeklyMetricCircles
           weeklyRows={last21.slice(-7)}
           last21Rows={last21}
@@ -1052,6 +1272,7 @@ export default function PatientDashboard() {
           selectedMetricId={weeklyChartMetricId}
           selectedCalendarDate={checkinDateStr}
           onShowAllMetrics={() => setWeeklyChartMetricId(null)}
+          lineDefinitions={lifestyleChartDefs}
         />
       </Box>
         </Box>
@@ -1068,10 +1289,9 @@ export default function PatientDashboard() {
               width: "100%",
               alignItems: "stretch",
               flex: 1,
-              minHeight: 0,
               bgcolor: theme.bg,
               /* Fill viewport so flex children (chat vs composer) get a real height budget */
-              minHeight: "100vh",
+              minHeight: { xs: "100vh", lg: 0 },
               height: { lg: "100vh" },
               maxHeight: { lg: "100vh" },
               overflow: { xs: "visible", lg: "hidden" },

@@ -42,6 +42,9 @@ function formatMetricDisplay(field, raw) {
     case "mood_score":
       return `${raw % 1 === 0 ? raw : raw.toFixed(1)}/10`;
     default:
+      if (field && String(field).startsWith("lr_")) {
+        return `${Math.round(raw)}/100`;
+      }
       return String(raw);
   }
 }
@@ -96,10 +99,11 @@ const METRIC_FIELDS = [
   "mood_score",
 ];
 
-function rowsHaveChartableMetric(rows) {
+function rowsHaveChartableMetric(rows, fields = METRIC_FIELDS) {
   if (!rows || rows.length === 0) return false;
+  const flist = fields && fields.length ? fields : METRIC_FIELDS;
   for (const r of rows) {
-    for (const f of METRIC_FIELDS) {
+    for (const f of flist) {
       if (typeof r[f] === "number" && !Number.isNaN(r[f])) return true;
     }
   }
@@ -541,6 +545,7 @@ function MultiNormalizedLineChart({ seriesList, theme, geo, highlightDate, rowsB
 /**
  * @param {string|null} props.selectedCalendarDate — YYYY-MM-DD from check-in calendar; highlights day + scrolls drill chart
  * @param {() => void} [props.onShowAllMetrics] — return to the six-metric combined chart (clears Today metric selection)
+ * @param {Array<{id: string, title: string, field: string, yMax: number, color: string, unit?: string}>|null} [props.lineDefinitions] — if set, replaces default six wearables (e.g. 10-axis lifestyle radar 0–100).
  */
 export default function WeeklyMetricCircles({
   weeklyRows,
@@ -549,9 +554,13 @@ export default function WeeklyMetricCircles({
   selectedMetricId = null,
   selectedCalendarDate = null,
   onShowAllMetrics,
+  lineDefinitions = null,
 }) {
-  const metrics = useMemo(
-    () => [
+  const metrics = useMemo(() => {
+    if (lineDefinitions && lineDefinitions.length > 0) {
+      return lineDefinitions;
+    }
+    return [
       {
         id: "activity",
         title: "Activity",
@@ -600,25 +609,32 @@ export default function WeeklyMetricCircles({
         yMax: 10,
         color: theme.metric.mood,
       },
-    ],
-    [theme]
-  );
+    ];
+  }, [theme, lineDefinitions]);
+
+  const chartFields = useMemo(() => metrics.map((m) => m.field), [metrics]);
 
   const selected = metrics.find((m) => m.id === selectedMetricId);
 
   const effectiveWeeklyRows = useMemo(() => {
-    if (weeklyRows && weeklyRows.length > 0 && rowsHaveChartableMetric(weeklyRows)) {
+    if (weeklyRows && weeklyRows.length > 0 && rowsHaveChartableMetric(weeklyRows, chartFields)) {
       return weeklyRows;
     }
+    if (lineDefinitions && lineDefinitions.length) {
+      return weeklyRows && weeklyRows.length ? weeklyRows : [];
+    }
     return buildDummyRows(7);
-  }, [weeklyRows]);
+  }, [weeklyRows, chartFields, lineDefinitions]);
 
   const effectiveLast21Rows = useMemo(() => {
-    if (last21Rows && last21Rows.length > 0 && rowsHaveChartableMetric(last21Rows)) {
+    if (last21Rows && last21Rows.length > 0 && rowsHaveChartableMetric(last21Rows, chartFields)) {
       return last21Rows;
     }
+    if (lineDefinitions && lineDefinitions.length) {
+      return last21Rows && last21Rows.length ? last21Rows : [];
+    }
     return buildDummyRows(21);
-  }, [last21Rows]);
+  }, [last21Rows, chartFields, lineDefinitions]);
 
   const multiSeries = useMemo(() => {
     return metrics.map((m) => ({

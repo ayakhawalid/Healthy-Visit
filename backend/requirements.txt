@@ -1,5 +1,6 @@
 cryptography
 fastapi
+python-multipart
 sqlalchemy
 pydantic
 python-jose

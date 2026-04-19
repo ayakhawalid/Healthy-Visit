@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Any, Literal, Optional
 from datetime import date
 
 
@@ -66,6 +66,7 @@ class MetricsCreate(BaseModel):
     raw_data: Optional[str] = None
     sleep_quality: Optional[int] = None
     is_smoking: Optional[bool] = None
+    lifestyle_radar_json: Optional[str] = None
 
 
 class MetricsUpdate(BaseModel):
@@ -84,6 +85,7 @@ class MetricsUpdate(BaseModel):
     raw_data: Optional[str] = None
     sleep_quality: Optional[int] = None
     is_smoking: Optional[bool] = None
+    lifestyle_radar_json: Optional[str] = None
 
 
 class MetricsResponse(BaseModel):
@@ -104,6 +106,7 @@ class MetricsResponse(BaseModel):
     raw_data: Optional[str] = None
     sleep_quality: Optional[int] = None
     is_smoking: Optional[bool] = None
+    lifestyle_radar_json: Optional[str] = None
 
 
 class TopicAnalyzeRequest(BaseModel):
@@ -164,16 +167,20 @@ class PatientProfileResponse(BaseModel):
 # --- AI onboarding chat (post-signup) ---
 class OnboardingStartRequest(BaseModel):
     patient_id: int
+    # Omit or null → Hebrew. Only "he" / "en" accepted (422 on other strings).
+    language: Optional[Literal["he", "en"]] = None
 
 
 class OnboardingStartResponse(BaseModel):
     session_id: str
     message: str
+    language: str  # "he" | "en" — echoed from request for the client to confirm locale
 
 
 class OnboardingMessageRequest(BaseModel):
     session_id: str
     user_message: str
+    language: Optional[str] = None  # Deprecated: ignored; locale is fixed from /onboarding/start
 
 
 class OnboardingMessageResponse(BaseModel):

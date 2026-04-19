@@ -1,15 +1,22 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load backend/.env before any code reads os.environ (API keys, DB, etc.).
+_BACKEND_ROOT = Path(__file__).resolve().parent
+load_dotenv(_BACKEND_ROOT / ".env")
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from CRUD.metrics import metrics
 from CRUD.fantastic import fantastic
 from CRUD.profile import profile
 from CRUD.onboarding_chat import onboarding
 from CRUD.research import research
+from CRUD.official_questionnaire import official_q_router
 
 from database import conn
 from models import Users
@@ -64,6 +71,8 @@ def _seed_admin():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print(f"[healthy-visit] Loaded server.py from: {_BACKEND_ROOT / 'server.py'}")
+    print("[healthy-visit] /health tag should be hv-health-v4 (with server_py + openai_configured). If you still see hv-health-v2, a different process on port 9999 is running.")
     _seed_admin()
     yield
 
@@ -71,23 +80,39 @@ async def lifespan(app: FastAPI):
 # openapi_url must not be "/api" — that would reserve GET /api and is easy to confuse with /api/* routes.
 app = FastAPI(docs_url="/api/docs", openapi_url="/openapi.json", lifespan=lifespan)
 
-_HEALTH_PAYLOAD = {
-    "ok": True,
-    "service": "healthy-visit-api",
-    "tag": "hv-health-v2",
-}
+_SERVER_PY = Path(__file__).resolve()
+try:
+    _SERVER_PY_MTIME = _SERVER_PY.stat().st_mtime
+except OSError:
+    _SERVER_PY_MTIME = 0.0
+
+
+def _health_payload() -> dict:
+    from official_q.llm_utils import openai_available
+
+    return {
+        "ok": True,
+        "service": "healthy-visit-api",
+        "tag": "hv-health-v4",
+        "openai_configured": bool(openai_available()),
+        "server_py": str(_SERVER_PY),
+        "server_py_mtime": _SERVER_PY_MTIME,
+    }
+
+
+_NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate"}
 
 
 @app.get("/health")
 def health_root():
     """Prefer this URL in the browser — no /api prefix, cannot clash with include_router(..., '/api')."""
-    return _HEALTH_PAYLOAD
+    return JSONResponse(content=_health_payload(), headers=_NO_CACHE)
 
 
 @app.get("/api/health")
 def api_health():
     """Same payload as GET /health (for clients that expect /api/...)."""
-    return _HEALTH_PAYLOAD
+    return JSONResponse(content=_health_payload(), headers=_NO_CACHE)
 
 
 @app.get("/")
@@ -95,11 +120,13 @@ def root():
     """Without this, GET / returns FastAPI's generic 404 JSON — confusing in the browser."""
     return {
         "service": "healthy-visit-api",
-        "message": "Backend is running. Open /health (simplest) or /api/health or /api/docs.",
+        "message": "Backend is running. Open /health or /api/health (includes openai_configured). API docs: /api/docs.",
         "health": "/health",
         "health_api_prefix": "/api/health",
+        "onboarding_llm_check": "/api/onboarding/llm-status",
         "openapi_json": "/openapi.json",
         "docs": "/api/docs",
+        "hint": "Use backend port (default 9999), not the React dev server (3000). Paths need the /api prefix.",
     }
 
 
@@ -116,6 +143,7 @@ app.include_router(fantastic, prefix="/api")
 app.include_router(profile, prefix="/api")
 app.include_router(onboarding, prefix="/api")
 app.include_router(research, prefix="/api")
+app.include_router(official_q_router, prefix="/api")
 
 
 @app.post("/api/create-researcher")
@@ -237,5 +265,5 @@ def chat(request: ChatRequest) -> ChatResponse:
 
 
 if __name__ == "__main__":
-    print("Healthy Visit backend — open http://127.0.0.1:9999/health  (tag hv-health-v2)")
+    print("Healthy Visit backend — open http://127.0.0.1:9999/health  (tag hv-health-v4, fields server_py / openai_configured)")
     uvicorn.run("server:app", host="0.0.0.0", reload=True, port=9999)

@@ -68,6 +68,7 @@ function SignUp() {
       if (data?.id != null) {
         localStorage.setItem("onboarding_patient_id", String(data.id));
       }
+      localStorage.removeItem("onboarding_language_choice");
       window.location.replace("/onboarding");
     } catch (err: any) {
       setSubmitError(err?.message || "Registration failed. Please try again.");
