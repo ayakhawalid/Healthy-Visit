@@ -15,7 +15,6 @@ import {
   IconButton,
   Alert,
   Stack,
-  Divider,
 } from "@mui/material";
 import {
   ChartPieSlice,
@@ -34,9 +33,10 @@ import {
   PaperPlaneTilt,
   UsersThree,
   ChatCircle,
+  IdentificationCard,
+  HeartStraight,
 } from "@phosphor-icons/react";
 import DailyCheckinCalendar from "./DailyCheckinCalendar";
-import WeeklyMetricCircles from "./WeeklyMetricCircles";
 import { useHistory, useLocation } from "react-router-dom";
 import { getUser, logout } from "../service/auth";
 import api from "../service/api";
@@ -135,8 +135,8 @@ const ADD_ENTRY_TOPICS = [
   { id: "career", label: "Career", Icon: ChartBar },
 ];
 
-/** Web Speech API language for the mic (Hebrew only). */
-const SPEECH_RECOGNITION_LANG = "he-IL";
+/** Web Speech API language for the mic. */
+const SPEECH_RECOGNITION_LANG = "en-US";
 
 /** Human-readable Today donut stat line. Lifestyle domains use 0–100. */
 function formatTodayMetricValue(key, value) {
@@ -157,6 +157,11 @@ function formatTodayMetricValue(key, value) {
     case "social_support":
     case "controlled_eating":
     case "substance":
+    case "profile":
+    case "substances":
+    case "mind":
+    case "relationships":
+    case "motivation":
       return `${Math.round(value)}/100`;
     case "smoking":
       if (value === 0) return "0 cigarettes";
@@ -171,6 +176,32 @@ function formatTodayMetricValue(key, value) {
   }
 }
 
+/**
+ * Collapse the 10 raw questionnaire radar scores into the 8 parts of the
+ * official health-behaviours questionnaire (חלקים א׳–ח׳).
+ * Part א׳ (Profile) is handled separately because it is completion %, not a score.
+ */
+function computeQuestionnairePartScores(row) {
+  const get = (k) => {
+    const v = row[`lr_${k}`];
+    return typeof v === "number" && !Number.isNaN(v) ? v : null;
+  };
+  const avg = (...keys) => {
+    const vals = keys.map(get).filter((v) => v !== null);
+    if (!vals.length) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+  return {
+    qp_nutrition: avg("nutrition", "controlled_eating"),
+    qp_activity: get("physical_activity"),
+    qp_sleep: get("sleep"),
+    qp_substances: avg("smoke_free", "alcohol_free"),
+    qp_mind: avg("stress", "mental_health"),
+    qp_relationships: get("social_support"),
+    qp_motivation: get("motivation"),
+  };
+}
+
 function mergeLifestyleRadarIntoRow(row) {
   if (!row || !row.lifestyle_radar_json) return row;
   try {
@@ -183,111 +214,89 @@ function mergeLifestyleRadarIntoRow(row) {
         extra[`lr_${d.key}`] = d.score;
       }
     });
-    return { ...row, ...extra };
+    const withRaw = { ...row, ...extra };
+    return { ...withRaw, ...computeQuestionnairePartScores(withRaw) };
   } catch (e) {
     return row;
   }
 }
 
-function buildLifestyleChartDefinitions(theme) {
-  return [
-    { id: "lr_nutrition", title: "תזונה", field: "lr_nutrition", yMax: 100, color: theme.metric.nutrition, unit: "/100" },
-    { id: "lr_physical_activity", title: "פעילות", field: "lr_physical_activity", yMax: 100, color: theme.metric.steps, unit: "/100" },
-    { id: "lr_sleep", title: "שינה", field: "lr_sleep", yMax: 100, color: theme.metric.sleep, unit: "/100" },
-    { id: "lr_stress", title: "סטרס", field: "lr_stress", yMax: 100, color: theme.snapshotIcon.stressSocial, unit: "/100" },
-    { id: "lr_mental_health", title: "נפש", field: "lr_mental_health", yMax: 100, color: theme.metric.mood, unit: "/100" },
-    { id: "lr_social_support", title: "תמיכה", field: "lr_social_support", yMax: 100, color: "#0d9488", unit: "/100" },
-    { id: "lr_controlled_eating", title: "אכילה", field: "lr_controlled_eating", yMax: 100, color: "#ca8a04", unit: "/100" },
-    { id: "lr_smoke_free", title: "ללא עישון", field: "lr_smoke_free", yMax: 100, color: theme.snapshotIcon.smoking, unit: "/100" },
-    { id: "lr_alcohol_free", title: "ללא אלכוהול", field: "lr_alcohol_free", yMax: 100, color: "#7c3aed", unit: "/100" },
-    { id: "lr_motivation", title: "מוטיבציה", field: "lr_motivation", yMax: 100, color: theme.logoGreen, unit: "/100" },
-  ];
-}
-
-/** Eight dashboard tiles: Excel radar merges עישון+אלכוהול; מוטיבציה appears in the 10-line chart only. */
-function buildEightLifestyleDonuts(row, theme) {
+/** Eight dashboard tiles, one per questionnaire part (א׳–ח׳). */
+function buildQuestionnairePartDonuts(row, theme, profilePct) {
   const pick = (k) =>
-    typeof row[`lr_${k}`] === "number" && !Number.isNaN(row[`lr_${k}`]) ? row[`lr_${k}`] : null;
-  const subAvg = (a, b) => {
-    const x = pick(a);
-    const y = pick(b);
-    if (x == null && y == null) return null;
-    if (x == null) return y;
-    if (y == null) return x;
-    return (x + y) / 2;
-  };
+    typeof row[k] === "number" && !Number.isNaN(row[k]) ? row[k] : null;
   return [
     {
+      key: "profile",
+      chartId: "qp_profile",
+      label: "Profile",
+      value: typeof profilePct === "number" && !Number.isNaN(profilePct) ? profilePct : null,
+      max: 100,
+      Icon: IdentificationCard,
+      color: "#64748b",
+    },
+    {
       key: "nutrition",
-      chartId: "lr_nutrition",
-      label: "תזונה",
-      value: pick("nutrition"),
+      chartId: "qp_nutrition",
+      label: "Nutrition",
+      value: pick("qp_nutrition"),
       max: 100,
       Icon: ForkKnife,
       color: theme.metric.nutrition,
     },
     {
       key: "physical_activity",
-      chartId: "lr_physical_activity",
-      label: "פעילות",
-      value: pick("physical_activity"),
+      chartId: "qp_activity",
+      label: "Activity",
+      value: pick("qp_activity"),
       max: 100,
       Icon: Sneaker,
       color: theme.metric.steps,
     },
     {
       key: "sleep_domain",
-      chartId: "lr_sleep",
-      label: "שינה",
-      value: pick("sleep"),
+      chartId: "qp_sleep",
+      label: "Sleep",
+      value: pick("qp_sleep"),
       max: 100,
       Icon: MoonStars,
       color: theme.metric.sleep,
     },
     {
-      key: "stress",
-      chartId: "lr_stress",
-      label: "סטרס",
-      value: pick("stress"),
-      max: 100,
-      Icon: Brain,
-      color: theme.snapshotIcon.stressSocial,
-    },
-    {
-      key: "mental_health",
-      chartId: "lr_mental_health",
-      label: "בריאות נפשית",
-      value: pick("mental_health"),
-      max: 100,
-      Icon: Smiley,
-      color: theme.metric.mood,
-    },
-    {
-      key: "social_support",
-      chartId: "lr_social_support",
-      label: "תמיכה",
-      value: pick("social_support"),
-      max: 100,
-      Icon: UsersThree,
-      color: "#0d9488",
-    },
-    {
-      key: "controlled_eating",
-      chartId: "lr_controlled_eating",
-      label: "אכילה מבוקרת",
-      value: pick("controlled_eating"),
-      max: 100,
-      Icon: ForkKnife,
-      color: "#ca8a04",
-    },
-    {
-      key: "substance",
-      chartId: null,
-      label: "עישון / אלכוהול",
-      value: subAvg("smoke_free", "alcohol_free"),
+      key: "substances",
+      chartId: "qp_substances",
+      label: "Substances",
+      value: pick("qp_substances"),
       max: 100,
       Icon: Cigarette,
       color: theme.snapshotIcon.smoking,
+    },
+    {
+      key: "mind",
+      chartId: "qp_mind",
+      label: "Stress & mood",
+      value: pick("qp_mind"),
+      max: 100,
+      Icon: Brain,
+      color: theme.metric.mood,
+    },
+    {
+      key: "relationships",
+      chartId: "qp_relationships",
+      label: "Relationships",
+      value: pick("qp_relationships"),
+      max: 100,
+      Icon: HeartStraight,
+      color: "#0d9488",
+    },
+    {
+      key: "motivation",
+      chartId: "qp_motivation",
+      label: "Motivation",
+      value: pick("qp_motivation"),
+      max: 100,
+      Icon: ChartBar,
+      color: theme.logoGreen,
     },
   ];
 }
@@ -360,6 +369,182 @@ function DonutChart({ value, max, color, size = 64, strokeWidth = 8, centerLabel
   return svg;
 }
 
+/**
+ * Vertical bar chart for the 8 questionnaire parts.
+ * X-axis = part name (categorical). Y-axis = score 0–100 (grade concluded so far).
+ * Built with flex/CSS so it grows naturally with the container height.
+ */
+function QuestionnairePartsBarChart({ parts, theme }) {
+  const yMax = 100;
+  const yTicks = [100, 75, 50, 25, 0];
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "row" }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            py: 1,
+            pr: 1,
+            flexShrink: 0,
+            minWidth: 28,
+          }}
+        >
+          {yTicks.map((t) => (
+            <Typography
+              key={t}
+              variant="caption"
+              sx={{ color: theme.textMuted, fontSize: "0.7rem", lineHeight: 1, textAlign: "right" }}
+            >
+              {t}
+            </Typography>
+          ))}
+        </Box>
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            position: "relative",
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "stretch",
+            gap: { xs: 0.5, sm: 1 },
+            px: 0.5,
+            pt: 1,
+            pb: 0,
+            borderBottom: `1px solid ${alpha(theme.text, 0.35)}`,
+          }}
+        >
+          {yTicks.map((t) => (
+            <Box
+              key={`grid-${t}`}
+              sx={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: `calc(8px + (100% - 8px) * ${1 - t / yMax})`,
+                borderTop: `1px dashed ${alpha(theme.text, 0.1)}`,
+                pointerEvents: "none",
+              }}
+            />
+          ))}
+          {parts.map((p) => {
+            const hasValue = typeof p.value === "number" && !Number.isNaN(p.value);
+            const v = hasValue ? Math.max(0, Math.min(yMax, p.value)) : 0;
+            const color = p.color || theme.logoGreen;
+            return (
+              <Box
+                key={p.key}
+                sx={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "flex-end",
+                  justifyContent: "center",
+                  position: "relative",
+                }}
+                title={hasValue ? `${p.label}: ${Math.round(p.value)}/100` : `${p.label}: —`}
+              >
+                <Box
+                  sx={{
+                    width: { xs: "70%", sm: "60%", md: "45%" },
+                    maxWidth: 34,
+                    height: `${(v / yMax) * 100}%`,
+                    minHeight: hasValue ? 2 : 0,
+                    bgcolor: alpha(color, 0.45),
+                    border: "none",
+                    borderTopLeftRadius: 6,
+                    borderTopRightRadius: 6,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    position: "relative",
+                    transition: "height 320ms ease",
+                  }}
+                >
+                  {hasValue ? (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        position: "absolute",
+                        top: -18,
+                        fontWeight: 700,
+                        fontSize: "0.72rem",
+                        color: theme.text,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {Math.round(p.value)}
+                    </Typography>
+                  ) : (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        position: "absolute",
+                        bottom: 2,
+                        fontSize: "0.7rem",
+                        color: theme.textMuted,
+                      }}
+                    >
+                      —
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+      </Box>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "row",
+          pl: "28px",
+          pr: 0.5,
+          pt: 0.75,
+          gap: { xs: 0.5, sm: 1 },
+          flexShrink: 0,
+        }}
+      >
+        {parts.map((p) => (
+          <Box
+            key={`lbl-${p.key}`}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "center",
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                color: theme.textMuted,
+                fontWeight: 600,
+                fontSize: "0.7rem",
+                lineHeight: 1.15,
+                display: "block",
+                wordBreak: "break-word",
+              }}
+            >
+              {p.label}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 function normalizeRow(row) {
   return {
     ...row,
@@ -396,6 +581,92 @@ function emptyTodayRow(patientId) {
     work_satisfaction: null,
     score: null,
   });
+}
+
+/**
+ * Demo radar rows so the 10-line chart is never empty while the patient has no data yet.
+ * Each field is a smooth-ish 0-100 curve with a small per-day jitter.
+ */
+function buildDemoRadarRows(patientId) {
+  const keys = [
+    "nutrition",
+    "physical_activity",
+    "sleep",
+    "stress",
+    "mental_health",
+    "social_support",
+    "controlled_eating",
+    "smoke_free",
+    "alcohol_free",
+    "motivation",
+  ];
+  const baseByKey = {
+    nutrition: 62,
+    physical_activity: 55,
+    sleep: 70,
+    stress: 48,
+    mental_health: 66,
+    social_support: 72,
+    controlled_eating: 58,
+    smoke_free: 80,
+    alcohol_free: 74,
+    motivation: 68,
+  };
+  const ampByKey = {
+    nutrition: 14,
+    physical_activity: 18,
+    sleep: 10,
+    stress: 16,
+    mental_health: 12,
+    social_support: 8,
+    controlled_eating: 14,
+    smoke_free: 10,
+    alcohol_free: 12,
+    motivation: 16,
+  };
+  const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
+  const rows = [];
+  const today = new Date();
+  for (let i = 20; i >= 0; i -= 1) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const radar = keys.map((k, ki) => {
+      const phase = ki * 0.7;
+      const osc = Math.sin((20 - i) / 3 + phase) * ampByKey[k];
+      const jitter = ((ki * 131 + (20 - i) * 37) % 9) - 4;
+      return { key: k, score: clamp(baseByKey[k] + osc + jitter) };
+    });
+    const scoreToSteps = (s) => Math.round(3000 + (s / 100) * 8000);
+    const activityScore = radar.find((r) => r.key === "physical_activity").score;
+    const sleepScore = radar.find((r) => r.key === "sleep").score;
+    const nutritionScore = radar.find((r) => r.key === "nutrition").score;
+    const stressScore = radar.find((r) => r.key === "stress").score;
+    const moodBase = radar.find((r) => r.key === "mental_health").score;
+    rows.push(
+      normalizeRow({
+        id: -(100 + i),
+        patient_id: patientId,
+        date: dateStr,
+        steps: scoreToSteps(activityScore),
+        sleep: Math.round((4 + (sleepScore / 100) * 5) * 10) / 10,
+        sleep_quality: Math.round(sleepScore / 10),
+        active_minutes: Math.round((activityScore / 100) * 60),
+        nutrition_score: nutritionScore,
+        alcohol_units: Math.max(0, Math.round((100 - radar.find((r) => r.key === "alcohol_free").score) / 15)),
+        stress_score: Math.round(stressScore / 10),
+        social_support_score: Math.round(radar.find((r) => r.key === "social_support").score / 10),
+        cigarettes_per_day: Math.max(0, Math.round((100 - radar.find((r) => r.key === "smoke_free").score) / 12)),
+        is_smoking: false,
+        mood_score: Math.round(moodBase / 10),
+        work_satisfaction: Math.round(radar.find((r) => r.key === "motivation").score / 10),
+        score: null,
+        lifestyle_radar_json: JSON.stringify(radar),
+        __demo: true,
+      })
+    );
+  }
+  return rows;
 }
 
 export default function PatientDashboard() {
@@ -563,35 +834,65 @@ export default function PatientDashboard() {
     [metrics]
   );
 
-  const lifestyleChartDefs = useMemo(() => buildLifestyleChartDefinitions(theme), []);
+  /** Intake/profile completion %, derived from the official questionnaire progress. */
+  const profilePct = useMemo(() => {
+    if (
+      officialProgress &&
+      typeof officialProgress.total_primary === "number" &&
+      officialProgress.total_primary > 0 &&
+      typeof officialProgress.answered_count === "number"
+    ) {
+      return Math.max(0, Math.min(100, (officialProgress.answered_count / officialProgress.total_primary) * 100));
+    }
+    return null;
+  }, [officialProgress]);
 
   const { today, week1, week2, week3, last21 } = useMemo(() => {
     if (patientId == null) {
       return { today: null, week1: [], week2: [], week3: [], last21: [] };
     }
-    if (!metricsWithRadar.length) {
-      const placeholder = mergeLifestyleRadarIntoRow(emptyTodayRow(patientId));
+    const PART_FIELDS = [
+      "qp_nutrition",
+      "qp_activity",
+      "qp_sleep",
+      "qp_substances",
+      "qp_mind",
+      "qp_relationships",
+      "qp_motivation",
+    ];
+    const hasAnyRadar = metricsWithRadar.some((row) =>
+      PART_FIELDS.some((f) => typeof row[f] === "number" && !Number.isNaN(row[f]))
+    );
+    // The Profile line is completion %, not a per-day behaviour, so it stays
+    // constant across the window.
+    const demoProfilePct = typeof profilePct === "number" ? profilePct : 55;
+    const attachProfile = (rows, pct) =>
+      rows.map((r) => ({ ...r, qp_profile: typeof pct === "number" ? pct : null }));
+    if (!hasAnyRadar) {
+      const demoRows = buildDemoRadarRows(patientId).map((r) => mergeLifestyleRadarIntoRow(r));
+      const withProfile = attachProfile(demoRows, demoProfilePct);
+      const todayRow = withProfile[withProfile.length - 1] || null;
       return {
-        today: placeholder,
-        week1: [],
-        week2: [],
-        week3: [],
-        last21: [placeholder],
+        today: todayRow,
+        week1: withProfile.slice(0, 7),
+        week2: withProfile.slice(7, 14),
+        week3: withProfile.slice(14, 21),
+        last21: withProfile,
       };
     }
-    const last21m = metricsWithRadar.slice(-21);
+    const last21m = attachProfile(metricsWithRadar.slice(-21), profilePct);
     const todayRow = last21m[last21m.length - 1] || null;
     const week1m = last21m.slice(0, 7);
     const week2m = last21m.slice(7, 14);
     const week3m = last21m.slice(14, 21);
     return { today: todayRow, week1: week1m, week2: week2m, week3: week3m, last21: last21m };
-  }, [metricsWithRadar, patientId]);
+  }, [metricsWithRadar, patientId, profilePct]);
 
-  /** Eight lifestyle domains (0–100), aligned with Excel radar; עישון+אלכוהול merged for the snapshot. */
+  /** Eight tiles, one per questionnaire part (חלקים א׳–ח׳). */
   const todayDonutMetrics = useMemo(() => {
     if (!today) return [];
-    return buildEightLifestyleDonuts(today, theme);
-  }, [today]);
+    return buildQuestionnairePartDonuts(today, theme, profilePct);
+  }, [today, profilePct]);
 
   const selectedTopic = useMemo(
     () => ADD_ENTRY_TOPICS.find((t) => t.id === selectedTopicId) || null,
@@ -716,15 +1017,15 @@ export default function PatientDashboard() {
   const donutRowCardSx = { bgcolor: "transparent", boxShadow: "none", mb: 0 };
   /** Stacked: donut on top, label + value in a row underneath (matches weekly metric circle tint) */
   const donutRowCardContentSx = {
-    py: 2,
+    py: 1,
     px: 0.5,
     bgcolor: "transparent",
-    "&:last-child": { pb: 2 },
+    "&:last-child": { pb: 1 },
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "flex-start",
-    gap: 1.25,
+    gap: 0.75,
   };
   const addTopicPalette = [
     theme.metric.nutrition,
@@ -895,22 +1196,66 @@ export default function PatientDashboard() {
         bgcolor: "#f0fdf4",
         display: "flex",
         flexDirection: "column",
-        minHeight: { xs: "min(70vh, 640px)", lg: 0 },
+        minHeight: { xs: "auto", lg: 0 },
         height: { lg: "100%" },
         maxHeight: { lg: "100%" },
-        overflow: "hidden",
+        overflowY: { xs: "visible", lg: "auto" },
+        overflowX: "hidden",
         boxShadow: { lg: "-12px 0 18px -14px rgba(31,45,61,0.35)" },
       }}
     >
-      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: theme.text, mb: 0.5 }}>
-          שאלון יומי · Daily questions
-        </Typography>
-        {officialProgress != null && (
-          <Typography variant="caption" sx={{ color: theme.textMuted, display: "block", mb: 1 }}>
-            התקדמות: {officialProgress.answered_count}/{officialProgress.total_primary}
-          </Typography>
-        )}
+      <Box sx={{ p: 1.5, pb: 1, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 0.5 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: theme.text, mb: 0.25 }}>
+              Daily questions
+            </Typography>
+            {officialProgress != null && (
+              <Typography variant="caption" sx={{ color: theme.textMuted, display: "block" }}>
+                Progress: {officialProgress.answered_count}/{officialProgress.total_primary}
+              </Typography>
+            )}
+          </Box>
+          <Box
+            component="button"
+            type="button"
+            onClick={() => {
+              setSidebarView("add");
+              history.replace("/patient-dashboard");
+            }}
+            aria-label="Go to add entry page"
+            sx={{
+              flexShrink: 0,
+              width: 72,
+              height: 72,
+              border: "none",
+              p: 0,
+              bgcolor: "transparent",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "50%",
+              "&:hover": { bgcolor: alpha(theme.logoGreen, 0.1) },
+              "&:focus-visible": { outline: `2px solid ${theme.logoGreen}`, outlineOffset: 2 },
+            }}
+          >
+            <Box
+              component="img"
+              src={siteLogo}
+              alt="Healthy Visit logo"
+              sx={{
+                width: 64,
+                height: 64,
+                objectFit: "contain",
+                display: "block",
+                transformOrigin: "center center",
+                animation: `${logoWiggle} 2.4s ease-in-out infinite`,
+                "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+              }}
+            />
+          </Box>
+        </Box>
         {officialQError && (
           <Alert severity="error" sx={{ mb: 1 }} onClose={() => setOfficialQError(null)}>
             {officialQError}
@@ -930,11 +1275,12 @@ export default function PatientDashboard() {
             <TextField
               value={officialQInput}
               onChange={(e) => setOfficialQInput(e.target.value)}
-              placeholder="תשובה חופשית"
+              placeholder="Type your answer"
               size="small"
               fullWidth
               multiline
-              minRows={2}
+              minRows={1}
+              maxRows={3}
               disabled={officialQLoading}
             />
             <Button
@@ -943,70 +1289,25 @@ export default function PatientDashboard() {
               disabled={officialQLoading || !officialQInput.trim()}
               sx={{ bgcolor: theme.logoGreen, alignSelf: "flex-start", textTransform: "none" }}
             >
-              {officialQLoading ? "שולח…" : "שליחה"}
+              {officialQLoading ? "Sending…" : "Send"}
             </Button>
           </Stack>
         ) : (
           <Typography variant="caption" sx={{ color: theme.textMuted }}>
-            אין שאלות חדשות כרגע — נחזור עם שאלות קצרות בימים הקרובים.
+            No new questions right now — we'll bring a few more in the next days.
           </Typography>
         )}
       </Box>
-      <Box sx={{ p: 2, pb: 1.5, flexShrink: 0 }}>
+      <Box sx={{ p: 1.5, pt: 1, pb: 1, flexShrink: 0 }}>
         <DailyCheckinCalendar
           value={checkinDateStr}
           onChange={setCheckinDateStr}
           accentColor={theme.logoGreen}
           backgroundColor={theme.sidebarSelectedBg}
         />
-        <Typography variant="caption" sx={{ color: theme.textMuted, mt: 1, display: "block" }}>
+        <Typography variant="caption" sx={{ color: theme.textMuted, mt: 0.5, display: "block" }}>
           Selected: {checkinDateStr}
         </Typography>
-      </Box>
-      <Divider />
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          bgcolor: "#ecfdf5",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          p: { xs: 1.5, sm: 2 },
-          cursor: "pointer",
-        }}
-        onClick={() => {
-          setSidebarView("add");
-          history.replace("/patient-dashboard");
-        }}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setSidebarView("add");
-            history.replace("/patient-dashboard");
-          }
-        }}
-        aria-label="Go to add entry page"
-      >
-        <Box
-          component="img"
-          src={siteLogo}
-          alt="Healthy Visit logo"
-          sx={{
-            width: "100%",
-            height: "100%",
-            maxHeight: "100%",
-            objectFit: "contain",
-            display: "block",
-            transformOrigin: "center center",
-            animation: `${logoWiggle} 2.4s ease-in-out infinite`,
-            "@media (prefers-reduced-motion: reduce)": {
-              animation: "none",
-            },
-          }}
-        />
       </Box>
     </Box>
   );
@@ -1124,9 +1425,9 @@ export default function PatientDashboard() {
             flexDirection: "column",
           }}
         >
-      <Container maxWidth="lg" sx={{ flexShrink: 0, pt: 2, pb: 0, px: { xs: 2, sm: 3 } }}>
+      <Container maxWidth="lg" sx={{ flexShrink: 0, pt: 1.5, pb: 0, px: { xs: 2, sm: 3 } }}>
         {/* Quick stats row with donut charts */}
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 1.5 }}>
           <Typography
             variant="subtitle2"
             sx={{
@@ -1136,16 +1437,13 @@ export default function PatientDashboard() {
               letterSpacing: 1,
               fontSize: "0.75rem",
               fontWeight: 600,
-              mb: 1.5,
+              mb: 1,
               mt: 0,
             }}
           >
-            היום · 8 תחומי בריאות (0–100)
+            Today · 8 questionnaire parts (0–100)
           </Typography>
-          <Typography variant="caption" sx={{ display: "block", color: theme.textMuted, mb: 1 }}>
-            מבוסס על שאלון אורח החיים ועל גיליון הרדאר באקסל (עישון ואלכוהול משולבים; מוטיבציה בגרף 10 הקווים).
-          </Typography>
-          <Grid container spacing={2}>
+          <Grid container spacing={1.25}>
             {todayDonutMetrics.map((m) => {
               const Icon = m.Icon;
               const displayValue = formatTodayMetricValue(m.key, m.value);
@@ -1185,8 +1483,8 @@ export default function PatientDashboard() {
                     <CardContent sx={donutRowCardContentSx}>
                       <Box
                         sx={{
-                          width: 100,
-                          height: 100,
+                          width: 104,
+                          height: 104,
                           borderRadius: "50%",
                           bgcolor: alpha(m.color, 0.08),
                           display: "flex",
@@ -1199,10 +1497,10 @@ export default function PatientDashboard() {
                           value={m.value}
                           max={m.max}
                           color={m.color}
-                          size={96}
-                          strokeWidth={14}
+                          size={98}
+                          strokeWidth={12}
                           trackColor={alpha(m.color, 0.08)}
-                          centerIcon={<Icon size={30} weight="duotone" color={m.color} />}
+                          centerIcon={<Icon size={34} weight="duotone" color={m.color} />}
                         />
                       </Box>
                       <Box
@@ -1211,7 +1509,7 @@ export default function PatientDashboard() {
                           flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
-                          gap: 0.35,
+                          gap: 0.15,
                           textAlign: "center",
                           width: "100%",
                         }}
@@ -1220,8 +1518,8 @@ export default function PatientDashboard() {
                           component="div"
                           sx={{
                             color: m.color,
-                            fontSize: "0.875rem",
-                            lineHeight: 1.3,
+                            fontSize: "0.8rem",
+                            lineHeight: 1.2,
                             fontWeight: 600,
                           }}
                         >
@@ -1231,8 +1529,8 @@ export default function PatientDashboard() {
                           component="div"
                           sx={{
                             color: "#4A4A4A",
-                            fontSize: "1.1rem",
-                            lineHeight: 1.35,
+                            fontSize: "0.95rem",
+                            lineHeight: 1.25,
                             fontWeight: 600,
                           }}
                         >
@@ -1251,29 +1549,21 @@ export default function PatientDashboard() {
       <Box
         sx={{
           flex: 1,
-          minHeight: 0,
+          minHeight: { xs: 280, lg: 0 },
           display: "flex",
           flexDirection: "column",
           px: { xs: 2, sm: 3 },
-          pb: 2,
+          pb: 1.5,
           maxWidth: "lg",
           width: "100%",
           mx: "auto",
           boxSizing: "border-box",
         }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.text, mb: 0.5 }}>
-          מגמות — 10 תחומים (0–100, שאלון / אקסל)
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.text, mb: 0.25, flexShrink: 0 }}>
+          Current grade — 8 questionnaire parts (0–100)
         </Typography>
-        <WeeklyMetricCircles
-          weeklyRows={last21.slice(-7)}
-          last21Rows={last21}
-          theme={theme}
-          selectedMetricId={weeklyChartMetricId}
-          selectedCalendarDate={checkinDateStr}
-          onShowAllMetrics={() => setWeeklyChartMetricId(null)}
-          lineDefinitions={lifestyleChartDefs}
-        />
+        <QuestionnairePartsBarChart parts={todayDonutMetrics} theme={theme} />
       </Box>
         </Box>
 
