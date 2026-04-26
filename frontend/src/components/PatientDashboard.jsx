@@ -28,13 +28,12 @@ import {
   ForkKnife,
   Cigarette,
   Brain,
-  Smiley,
   Microphone,
   PaperPlaneTilt,
-  UsersThree,
   ChatCircle,
   IdentificationCard,
   HeartStraight,
+  Translate,
 } from "@phosphor-icons/react";
 import DailyCheckinCalendar from "./DailyCheckinCalendar";
 import { useHistory, useLocation } from "react-router-dom";
@@ -78,9 +77,13 @@ const theme = {
     smoking: "#C2410C",
     stressSocial: "#6366F1",
   },
-  /** Same as right panel — selected sidebar item */
+  /** Used by the right panel calendar — keep mint green to match the panel. */
   sidebarSelectedBg: "#f0fdf4",
   sidebarSelectedHoverBg: "#ecfdf5",
+  /** Left rail selected item — neutral gray so the active page doesn't read
+   *  as a green accent on the white sidebar. */
+  leftNavSelectedBg: "#E2E6EA",
+  leftNavSelectedHoverBg: "#D6DBE0",
 };
 
 /** Add-entry chat: distinct message fills (same palette as original Chip bubbles). */
@@ -109,13 +112,13 @@ const ADD_ENTRY_TILE_HALF = ADD_ENTRY_TILE_PX / 2;
 
 const sidebarNavSelectedSx = {
   "&.Mui-selected": {
-    bgcolor: theme.sidebarSelectedBg,
+    bgcolor: theme.leftNavSelectedBg,
     color: theme.text,
     "&:hover": {
-      bgcolor: theme.sidebarSelectedHoverBg,
+      bgcolor: theme.leftNavSelectedHoverBg,
     },
     "&.Mui-focusVisible": {
-      bgcolor: theme.sidebarSelectedHoverBg,
+      bgcolor: theme.leftNavSelectedHoverBg,
     },
     "& .MuiListItemIcon-root": {
       color: theme.text,
@@ -123,20 +126,176 @@ const sidebarNavSelectedSx = {
   },
 };
 
+/**
+ * Topics in the Add daily metrics rail.
+ *
+ * These mirror the 8 questionnaire-part donuts on the dashboard (label, icon
+ * and color come from `buildQuestionnairePartDonuts` so the two views feel
+ * identical). `analyzeTopic` is the backend `/analyze/{topic}` slug used when
+ * the patient submits free-text — `null` means the topic does not have a
+ * conversational analyzer (Profile is filled via the onboarding flow).
+ */
 const ADD_ENTRY_TOPICS = [
-  { id: "family-friends", label: "Family & Friends", Icon: UsersThree },
-  { id: "activity", label: "Activity", Icon: Sneaker },
-  { id: "nutrition", label: "Nutrition", Icon: ForkKnife },
-  { id: "tobacco-toxics", label: "Tobacco & Toxics", Icon: Cigarette },
-  { id: "alcohol", label: "Alcohol", Icon: Smiley },
-  { id: "sleep-stress-safe-sex", label: "Sleep / Stress / Safe Sex", Icon: MoonStars },
-  { id: "type", label: "Type (Behavior)", Icon: Brain },
-  { id: "insight", label: "Insight", Icon: Smiley },
-  { id: "career", label: "Career", Icon: ChartBar },
+  { id: "profile", labelKey: "topic_profile", Icon: IdentificationCard, color: "#64748b", analyzeTopic: null },
+  { id: "nutrition", labelKey: "topic_nutrition", Icon: ForkKnife, color: theme.metric.nutrition, analyzeTopic: "nutrition" },
+  { id: "activity", labelKey: "topic_activity", Icon: Sneaker, color: theme.metric.steps, analyzeTopic: "activity" },
+  { id: "sleep", labelKey: "topic_sleep", Icon: MoonStars, color: theme.metric.sleep, analyzeTopic: "sleep" },
+  { id: "substances", labelKey: "topic_substances", Icon: Cigarette, color: theme.snapshotIcon.smoking, analyzeTopic: "tobacco-toxics" },
+  { id: "mind", labelKey: "topic_mind", Icon: Brain, color: theme.metric.mood, analyzeTopic: "mental-health" },
+  { id: "relationships", labelKey: "topic_relationships", Icon: HeartStraight, color: "#0d9488", analyzeTopic: "family-friends" },
+  { id: "motivation", labelKey: "topic_motivation", Icon: ChartBar, color: theme.logoGreen, analyzeTopic: "insight" },
 ];
 
-/** Web Speech API language for the mic. */
-const SPEECH_RECOGNITION_LANG = "en-US";
+/** Web Speech API language tag per UI language. */
+const SPEECH_RECOGNITION_LANGS = { en: "en-US", he: "he-IL" };
+
+/**
+ * UI strings keyed by language. Topic labels and headings are duplicated here
+ * so the dashboard, the right-side panel, the calendar and the sidebar all
+ * speak the same language. Functions accept the runtime arg (e.g. topic name).
+ */
+const I18N = {
+  en: {
+    dashboard_nav: "Dashboard",
+    add_nav: "Add daily metrics",
+    statistics_nav: "Statistics",
+    onboarding_nav: "Onboarding",
+    device_nav: "Device",
+    device_secondary: "Demo – not active. In production, sleep & steps sync from your wearable.",
+    my_profile: "My profile",
+    logout: "Logout",
+    open_sidebar: "Open sidebar",
+    close_sidebar: "Close sidebar",
+    today_heading: "Today · 8 questionnaire parts (0–100)",
+    grade_heading: "Current grade — 8 questionnaire parts (0–100)",
+    daily_questions: "Daily questions",
+    progress_label: "Progress",
+    no_new_questions: "No new questions right now — we'll bring a few more in the next days.",
+    type_your_answer: "Type your answer",
+    sending: "Sending…",
+    send: "Send",
+    selected_label: "Selected",
+    today_button: "Today",
+    language_label: "Language",
+    chat_empty_default: (topic) => `Speak or type freely. We will extract structured details for ${topic}.`,
+    chat_empty_questionnaire: "Loading today's question...",
+    chat_input_questionnaire: "Type your answer...",
+    chat_input_default: (topic) => `Share your ${topic} details...`,
+    listening_label: "Listening",
+    profile_via_onboarding: "Profile is filled via the onboarding flow — open Onboarding from the sidebar.",
+    questionnaire_done: "Thanks — that's all the questions for today. We'll bring a few more in the next days.",
+    select_topic: "Select a topic from the right sidebar to start your conversational entry.",
+    structured_extracted: "Structured data extracted. Review the summary and confirm to save.",
+    aria_logo_questionnaire: "Answer today's question on the Add daily metrics page",
+    aria_mic_supported: "Toggle microphone",
+    aria_mic_unsupported: "Speech recognition is not supported in this browser",
+    failed_save_answer: "Failed to save answer",
+    failed_save_entry: "Failed to save entry",
+    failed_analyze: "Failed to analyze message",
+    sign_in_prompt: "Please sign in to view your dashboard.",
+    topic_profile: "Profile",
+    topic_nutrition: "Nutrition",
+    topic_activity: "Activity",
+    topic_sleep: "Sleep",
+    topic_substances: "Substances",
+    topic_mind: "Stress & mood",
+    topic_relationships: "Relationships",
+    topic_motivation: "Motivation",
+    weekdays_short: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    months_short: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  },
+  he: {
+    dashboard_nav: "לוח בקרה",
+    add_nav: "הוספת מדדים יומיים",
+    statistics_nav: "סטטיסטיקה",
+    onboarding_nav: "תהליך קליטה",
+    device_nav: "מכשיר",
+    device_secondary: "הדגמה – לא פעיל. בגרסה החיה נתוני שינה וצעדים מסתנכרנים מהמכשיר הלביש שלך.",
+    my_profile: "הפרופיל שלי",
+    logout: "יציאה",
+    open_sidebar: "פתח סרגל צד",
+    close_sidebar: "סגור סרגל צד",
+    today_heading: "היום · 8 חלקי השאלון (0–100)",
+    grade_heading: "ציון נוכחי — 8 חלקי השאלון (0–100)",
+    daily_questions: "שאלות יומיות",
+    progress_label: "התקדמות",
+    no_new_questions: "אין שאלות חדשות כרגע — נביא עוד שאלות בימים הקרובים.",
+    type_your_answer: "כתוב/י את התשובה",
+    sending: "שולח…",
+    send: "שלח",
+    selected_label: "נבחר",
+    today_button: "היום",
+    language_label: "שפה",
+    chat_empty_default: (topic) => `אפשר לדבר או להקליד בחופשיות. נחלץ פרטים מובנים עבור ${topic}.`,
+    chat_empty_questionnaire: "טוען את שאלת היום...",
+    chat_input_questionnaire: "כתוב/י את התשובה שלך...",
+    chat_input_default: (topic) => `שתף/י את הפרטים על ${topic}...`,
+    listening_label: "מקשיב",
+    profile_via_onboarding: "הפרופיל ממולא דרך מסך הקליטה — פתח/י אותו מסרגל הצד.",
+    questionnaire_done: "תודה — אלו כל השאלות להיום. נביא עוד בימים הקרובים.",
+    select_topic: "בחר/י נושא מסרגל הצד כדי להתחיל בשיחה.",
+    structured_extracted: "המידע נחלץ. סקור/י את הסיכום ואשר/י לשמור.",
+    aria_logo_questionnaire: "ענה על שאלת היום בעמוד הוספת מדדים",
+    aria_mic_supported: "הפעל/כבה מיקרופון",
+    aria_mic_unsupported: "זיהוי דיבור אינו נתמך בדפדפן זה",
+    failed_save_answer: "שמירת התשובה נכשלה",
+    failed_save_entry: "שמירת הרשומה נכשלה",
+    failed_analyze: "ניתוח ההודעה נכשל",
+    sign_in_prompt: "התחבר/י כדי לצפות בלוח הבקרה.",
+    topic_profile: "פרופיל",
+    topic_nutrition: "תזונה",
+    topic_activity: "פעילות",
+    topic_sleep: "שינה",
+    topic_substances: "חומרים פעילים",
+    topic_mind: "מצב רוח ולחץ",
+    topic_relationships: "מערכות יחסים",
+    topic_motivation: "מוטיבציה",
+    weekdays_short: ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"],
+    months_short: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
+  },
+};
+
+function makeT(lang) {
+  const dict = I18N[lang] || I18N.en;
+  return (key, ...args) => {
+    const v = dict[key] ?? I18N.en[key] ?? key;
+    return typeof v === "function" ? v(...args) : v;
+  };
+}
+
+function normalizeLanguage(v) {
+  return v === "en" ? "en" : "he";
+}
+
+/**
+ * Generic LLM fallbacks that the backend returns when it has no scripted line
+ * for a question. They tell the patient nothing about *what* to answer, so we
+ * detect them on the client and prefer the catalog question text instead.
+ */
+const GENERIC_QUESTION_FALLBACKS = [
+  "Could you share a quick answer in your own words? Anything close is fine.",
+  "אפשר לענות במשפט או שניים בניסוח חופשי? כל ניסוח שמספר את המידע מספיק.",
+];
+
+/**
+ * Pick the most meaningful question text for display in the active UI language.
+ *
+ * 1. Prefer the backend's `conversational_prompt` — it is generated in the
+ *    language the dashboard requested and usually carries warm phrasing.
+ * 2. If that prompt is one of the generic placeholders (the LLM had nothing
+ *    scripted for the question id), fall back to the catalog `hebrew` field —
+ *    but only when the UI is actually Hebrew, otherwise an English speaker
+ *    would suddenly see a Hebrew question.
+ * 3. As a last resort, return whatever non-empty value we have.
+ */
+function pickQuestionPrompt(q, language = "he") {
+  if (!q) return "";
+  const conv = (q.conversational_prompt || "").trim();
+  const hebrew = (q.hebrew || "").trim();
+  if (conv && !GENERIC_QUESTION_FALLBACKS.includes(conv)) return conv;
+  if (language === "he" && hebrew) return hebrew;
+  return conv || hebrew || "";
+}
 
 /** Human-readable Today donut stat line. Lifestyle domains use 0–100. */
 function formatTodayMetricValue(key, value) {
@@ -221,15 +380,16 @@ function mergeLifestyleRadarIntoRow(row) {
   }
 }
 
-/** Eight dashboard tiles, one per questionnaire part (א׳–ח׳). */
-function buildQuestionnairePartDonuts(row, theme, profilePct) {
+/** Eight dashboard tiles, one per questionnaire part (א׳–ח׳). Labels come from `t()`
+ *  so they switch with the active UI language. */
+function buildQuestionnairePartDonuts(row, theme, profilePct, t) {
   const pick = (k) =>
     typeof row[k] === "number" && !Number.isNaN(row[k]) ? row[k] : null;
   return [
     {
       key: "profile",
       chartId: "qp_profile",
-      label: "Profile",
+      label: t("topic_profile"),
       value: typeof profilePct === "number" && !Number.isNaN(profilePct) ? profilePct : null,
       max: 100,
       Icon: IdentificationCard,
@@ -238,7 +398,7 @@ function buildQuestionnairePartDonuts(row, theme, profilePct) {
     {
       key: "nutrition",
       chartId: "qp_nutrition",
-      label: "Nutrition",
+      label: t("topic_nutrition"),
       value: pick("qp_nutrition"),
       max: 100,
       Icon: ForkKnife,
@@ -247,7 +407,7 @@ function buildQuestionnairePartDonuts(row, theme, profilePct) {
     {
       key: "physical_activity",
       chartId: "qp_activity",
-      label: "Activity",
+      label: t("topic_activity"),
       value: pick("qp_activity"),
       max: 100,
       Icon: Sneaker,
@@ -256,7 +416,7 @@ function buildQuestionnairePartDonuts(row, theme, profilePct) {
     {
       key: "sleep_domain",
       chartId: "qp_sleep",
-      label: "Sleep",
+      label: t("topic_sleep"),
       value: pick("qp_sleep"),
       max: 100,
       Icon: MoonStars,
@@ -265,16 +425,16 @@ function buildQuestionnairePartDonuts(row, theme, profilePct) {
     {
       key: "substances",
       chartId: "qp_substances",
-      label: "Substances",
+      label: t("topic_substances"),
       value: pick("qp_substances"),
       max: 100,
       Icon: Cigarette,
-      color: theme.snapshotIcon.smoking,
+      color: theme.metric.steps,
     },
     {
       key: "mind",
       chartId: "qp_mind",
-      label: "Stress & mood",
+      label: t("topic_mind"),
       value: pick("qp_mind"),
       max: 100,
       Icon: Brain,
@@ -283,20 +443,20 @@ function buildQuestionnairePartDonuts(row, theme, profilePct) {
     {
       key: "relationships",
       chartId: "qp_relationships",
-      label: "Relationships",
+      label: t("topic_relationships"),
       value: pick("qp_relationships"),
       max: 100,
       Icon: HeartStraight,
-      color: "#0d9488",
+      color: theme.metric.nutrition,
     },
     {
       key: "motivation",
       chartId: "qp_motivation",
-      label: "Motivation",
+      label: t("topic_motivation"),
       value: pick("qp_motivation"),
       max: 100,
       Icon: ChartBar,
-      color: theme.logoGreen,
+      color: theme.metric.mood,
     },
   ];
 }
@@ -461,7 +621,9 @@ function QuestionnairePartsBarChart({ parts, theme }) {
                     maxWidth: 34,
                     height: `${(v / yMax) * 100}%`,
                     minHeight: hasValue ? 2 : 0,
-                    bgcolor: alpha(color, 0.45),
+                    background: hasValue
+                      ? `linear-gradient(180deg, ${color} 0%, ${alpha(color, 0.82)} 100%)`
+                      : alpha(color, 0.18),
                     border: "none",
                     borderTopLeftRadius: 6,
                     borderTopRightRadius: 6,
@@ -469,6 +631,9 @@ function QuestionnairePartsBarChart({ parts, theme }) {
                     alignItems: "flex-start",
                     justifyContent: "center",
                     position: "relative",
+                    boxShadow: hasValue
+                      ? `0 4px 10px -4px ${alpha(color, 0.55)}, inset 0 1px 0 ${alpha("#ffffff", 0.25)}`
+                      : "none",
                     transition: "height 320ms ease",
                   }}
                 >
@@ -707,18 +872,38 @@ export default function PatientDashboard() {
   const [officialQInput, setOfficialQInput] = useState("");
   const [officialQLoading, setOfficialQLoading] = useState(false);
   const [officialQError, setOfficialQError] = useState(null);
+  /** When true, the Add daily metrics chat is driven by the official questionnaire
+   *  (assistant asks the next question; patient answers via text/mic; answer is
+   *  posted to /official-questionnaire/answer instead of /analyze/{topic}). */
+  const [addQuestionnaireMode, setAddQuestionnaireMode] = useState(false);
+  /** While in questionnaire mode, this is the question the patient is currently answering. */
+  const [addQuestionnaireActive, setAddQuestionnaireActive] = useState(null);
+  /** UI language ("he" | "en"). Persisted in localStorage so the backend
+   *  questionnaire fetch + the speech recognizer pick the same language as the UI. */
+  const [language, setLanguage] = useState(() => {
+    if (typeof localStorage === "undefined") return "he";
+    return normalizeLanguage(localStorage.getItem("patient_chat_language"));
+  });
+  const t = useMemo(() => makeT(language), [language]);
+  const isRtl = language === "he";
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem("patient_chat_language", language);
+  }, [language]);
 
   /** Stable unique SVG pattern ids (React 17 has no useId) */
   const addEntryWallpaperKey = useMemo(() => `w${Math.random().toString(36).slice(2, 11)}`, []);
   const addEntryPatternBrickA = `chat-wall-a-${addEntryWallpaperKey}`;
   const addEntryPatternBrickB = `chat-wall-b-${addEntryWallpaperKey}`;
 
-  /** First visit to Add entry: default to Family & Friends and show chat (topic rail collapses like a manual pick). */
+  /** First visit to Add entry: default to Family & Friends and show chat (topic rail collapses like a manual pick).
+   *  Skip when the chat is being driven by the official questionnaire — there is no topic to pick. */
   useLayoutEffect(() => {
-    if (sidebarView !== "add" || selectedTopicId != null) return;
+    if (sidebarView !== "add" || selectedTopicId != null || addQuestionnaireMode) return;
     setSelectedTopicId(ADD_ENTRY_TOPICS[0].id);
     setTopicRailCollapsed(true);
-  }, [sidebarView, selectedTopicId]);
+  }, [sidebarView, selectedTopicId, addQuestionnaireMode]);
 
   // 1) Fetch current user
   useEffect(() => {
@@ -751,17 +936,13 @@ export default function PatientDashboard() {
 
   const loadOfficialQuestionnaire = useCallback(() => {
     if (patientId == null) return;
-    const chatLang =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("patient_chat_language") || "he"
-        : "he";
     api
       .get("/official-questionnaire/progress", { params: { patient_id: patientId } })
       .then((r) => setOfficialProgress(r.data))
       .catch(() => setOfficialProgress(null));
     api
       .get("/official-questionnaire/daily", {
-        params: { patient_id: patientId, language: chatLang },
+        params: { patient_id: patientId, language },
       })
       .then((r) => {
         const qs = r.data.questions || [];
@@ -772,7 +953,7 @@ export default function PatientDashboard() {
         setOfficialQuestionQueue([]);
         setOfficialQuestionIndex(0);
       });
-  }, [patientId]);
+  }, [patientId, language]);
 
   const refetchMetrics = useCallback(() => {
     if (patientId == null) return;
@@ -825,9 +1006,34 @@ export default function PatientDashboard() {
   }, [authChecked, patientId, loadOfficialQuestionnaire]);
 
   useEffect(() => {
-    if (sidebarView !== "dashboard" || patientId == null) return;
+    if (patientId == null) return;
+    // Refetch when entering any view OR when the UI language changes — the
+    // backend returns prompts in the requested language, so we always need a
+    // fresh queue after a toggle.
     loadOfficialQuestionnaire();
   }, [sidebarView, patientId, loadOfficialQuestionnaire]);
+
+  // While the patient is mid-conversation in the daily-metrics chat, swap the
+  // currently displayed question text to the newly chosen language.
+  useEffect(() => {
+    if (!addQuestionnaireMode) return;
+    const q = officialQuestionQueue[officialQuestionIndex];
+    if (!q) return;
+    const newPrompt = pickQuestionPrompt(q, language);
+    setAddQuestionnaireActive(q);
+    setChatMessages((prev) => {
+      if (!prev.length) return [{ role: "assistant", text: newPrompt }];
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          if (next[i].text === newPrompt) return prev;
+          next[i] = { ...next[i], text: newPrompt };
+          return next;
+        }
+      }
+      return prev;
+    });
+  }, [language, addQuestionnaireMode, officialQuestionQueue, officialQuestionIndex]);
 
   const metricsWithRadar = useMemo(
     () => metrics.map((row) => mergeLifestyleRadarIntoRow(normalizeRow(row))),
@@ -891,8 +1097,8 @@ export default function PatientDashboard() {
   /** Eight tiles, one per questionnaire part (חלקים א׳–ח׳). */
   const todayDonutMetrics = useMemo(() => {
     if (!today) return [];
-    return buildQuestionnairePartDonuts(today, theme, profilePct);
-  }, [today, profilePct]);
+    return buildQuestionnairePartDonuts(today, theme, profilePct, t);
+  }, [today, profilePct, t]);
 
   const selectedTopic = useMemo(
     () => ADD_ENTRY_TOPICS.find((t) => t.id === selectedTopicId) || null,
@@ -908,7 +1114,7 @@ export default function PatientDashboard() {
     const SpeechRecognitionImpl =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new SpeechRecognitionImpl();
-    rec.lang = SPEECH_RECOGNITION_LANG;
+    rec.lang = SPEECH_RECOGNITION_LANGS[language] || SPEECH_RECOGNITION_LANGS.en;
     rec.interimResults = true;
     rec.continuous = true;
     rec.onresult = (event) => {
@@ -949,7 +1155,7 @@ export default function PatientDashboard() {
       recognitionStartingRef.current = false;
       recognitionActiveRef.current = false;
     };
-  }, [speechRecognitionSupported]);
+  }, [speechRecognitionSupported, language]);
 
   if (loading) {
     return (
@@ -979,8 +1185,8 @@ export default function PatientDashboard() {
           p: 3,
         }}
       >
-        <Typography variant="h6" sx={{ color: theme.textMuted }}>
-          Please sign in to view your dashboard.
+        <Typography variant="h6" sx={{ color: theme.textMuted }} dir={isRtl ? "rtl" : "ltr"}>
+          {t("sign_in_prompt")}
         </Typography>
       </Box>
     );
@@ -1014,12 +1220,13 @@ export default function PatientDashboard() {
   };
   const cardTitleSx = { fontWeight: 600, color: theme.text, mb: 1.5 };
   /** Today row — six donut stats (icons match WeeklyMetricCircles): no card chrome, smaller label/value */
-  const donutRowCardSx = { bgcolor: "transparent", boxShadow: "none", mb: 0 };
+  const donutRowCardSx = { bgcolor: "transparent", boxShadow: "none", mb: 0, overflow: "visible" };
   /** Stacked: donut on top, label + value in a row underneath (matches weekly metric circle tint) */
   const donutRowCardContentSx = {
     py: 1,
     px: 0.5,
     bgcolor: "transparent",
+    overflow: "visible",
     "&:last-child": { pb: 1 },
     display: "flex",
     flexDirection: "column",
@@ -1027,18 +1234,7 @@ export default function PatientDashboard() {
     justifyContent: "flex-start",
     gap: 0.75,
   };
-  const addTopicPalette = [
-    theme.metric.nutrition,
-    theme.metric.steps,
-    theme.metric.sleep,
-    theme.snapshotIcon.smoking,
-    theme.metric.mood,
-    theme.snapshotIcon.stressSocial,
-    theme.metric.steps,
-    theme.metric.sleep,
-    theme.metric.nutrition,
-  ];
-  const handleTopicSelect = (topicId) => {
+  const handleTopicSelect = (topic) => {
     if (recognitionRef.current && (recognitionActiveRef.current || recognitionStartingRef.current)) {
       try {
         recognitionRef.current.stop();
@@ -1046,13 +1242,22 @@ export default function PatientDashboard() {
         console.warn("Speech recognition stop failed", e);
       }
     }
-    setSelectedTopicId(topicId);
+    if (topic && topic.id === "profile") {
+      if (patientId == null) return;
+      localStorage.setItem("onboarding_patient_id", String(patientId));
+      localStorage.removeItem("onboarding_language_choice");
+      history.push("/onboarding");
+      return;
+    }
+    setSelectedTopicId(topic.id);
     setChatMessages([]);
     setChatInput("");
     setLiveTranscript("");
     setAnalyzeError(null);
     setAnalysisResult(null);
     setTopicRailCollapsed(true);
+    setAddQuestionnaireMode(false);
+    setAddQuestionnaireActive(null);
   };
 
   const handleMicToggle = () => {
@@ -1075,10 +1280,68 @@ export default function PatientDashboard() {
     }
   };
 
+  /**
+   * Submit an answer to the official questionnaire from the Add daily metrics chat.
+   * Adds the user's answer + the next question (or a friendly "all done" line) to
+   * the in-chat transcript, and refreshes progress + metrics in the background.
+   */
+  const handleAddEntryQuestionnaireSubmit = (e) => {
+    e?.preventDefault();
+    const text = (chatInput || "").trim();
+    const q = addQuestionnaireActive;
+    if (!text || !q || patientId == null) return;
+    setIsAnalyzing(true);
+    setAnalyzeError(null);
+    const userMessage = { role: "user", text };
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput("");
+    setLiveTranscript("");
+    api
+      .post("/official-questionnaire/answer", {
+        patient_id: patientId,
+        question_id: q.question_id,
+        user_message: text,
+      })
+      .then(() => {
+        const remaining = officialQuestionQueue.slice(officialQuestionIndex + 1);
+        const nextQ = remaining[0] || null;
+        if (nextQ) {
+          const nextPrompt = pickQuestionPrompt(nextQ, language);
+          setOfficialQuestionIndex((i) => i + 1);
+          setAddQuestionnaireActive(nextQ);
+          setChatMessages((prev) => [
+            ...prev,
+            { role: "assistant", text: nextPrompt },
+          ]);
+        } else {
+          setAddQuestionnaireActive(null);
+          setChatMessages((prev) => [
+            ...prev,
+            { role: "assistant", text: t("questionnaire_done") },
+          ]);
+          setOfficialQuestionIndex(0);
+          loadOfficialQuestionnaire();
+        }
+        refetchMetrics();
+        api
+          .get("/official-questionnaire/progress", { params: { patient_id: patientId } })
+          .then((r) => setOfficialProgress(r.data))
+          .catch(() => {});
+      })
+      .catch((err) => {
+        setAnalyzeError(err.response?.data?.detail || err.message || t("failed_save_answer"));
+      })
+      .finally(() => setIsAnalyzing(false));
+  };
+
   const handleAnalyzeTopic = (e) => {
     e?.preventDefault();
     const text = (chatInput || "").trim();
     if (!text || !selectedTopic) return;
+    if (!selectedTopic.analyzeTopic) {
+      setAnalyzeError(t("profile_via_onboarding"));
+      return;
+    }
     setAnalyzeError(null);
     setIsAnalyzing(true);
     setAnalysisResult(null);
@@ -1087,7 +1350,7 @@ export default function PatientDashboard() {
     setChatMessages(nextMessages);
     setChatInput("");
     api
-      .post(`/analyze/${selectedTopic.id}`, {
+      .post(`/analyze/${selectedTopic.analyzeTopic}`, {
         patient_id: patientId,
         date: formDate,
         text,
@@ -1097,14 +1360,11 @@ export default function PatientDashboard() {
         setAnalysisResult(result);
         setChatMessages((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            text: "Structured data extracted. Review the summary and confirm to save.",
-          },
+          { role: "assistant", text: t("structured_extracted") },
         ]);
       })
       .catch((err) => {
-        setAnalyzeError(err.response?.data?.detail || err.message || "Failed to analyze message");
+        setAnalyzeError(err.response?.data?.detail || err.message || t("failed_analyze"));
       })
       .finally(() => setIsAnalyzing(false));
   };
@@ -1130,7 +1390,7 @@ export default function PatientDashboard() {
         refetchMetrics();
         setSidebarView("dashboard");
       })
-      .catch((err) => setFormError(err.response?.data?.detail || err.message || "Failed to save entry"))
+      .catch((err) => setFormError(err.response?.data?.detail || err.message || t("failed_save_entry")))
       .finally(() => setConfirmSaving(false));
   };
 
@@ -1180,7 +1440,7 @@ export default function PatientDashboard() {
           .catch(() => {});
       })
       .catch((err) => {
-        setOfficialQError(err.response?.data?.detail || err.message || "Failed to save answer");
+        setOfficialQError(err.response?.data?.detail || err.message || t("failed_save_answer"));
       })
       .finally(() => setOfficialQLoading(false));
   };
@@ -1204,15 +1464,15 @@ export default function PatientDashboard() {
         boxShadow: { lg: "-12px 0 18px -14px rgba(31,45,61,0.35)" },
       }}
     >
-      <Box sx={{ p: 1.5, pb: 1, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+      <Box sx={{ p: 1.5, pb: 1, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,0.06)" }} dir={isRtl ? "rtl" : "ltr"}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 0.5 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700, color: theme.text, mb: 0.25 }}>
-              Daily questions
+              {t("daily_questions")}
             </Typography>
             {officialProgress != null && (
               <Typography variant="caption" sx={{ color: theme.textMuted, display: "block" }}>
-                Progress: {officialProgress.answered_count}/{officialProgress.total_primary}
+                {t("progress_label")}: {officialProgress.answered_count}/{officialProgress.total_primary}
               </Typography>
             )}
           </Box>
@@ -1220,10 +1480,26 @@ export default function PatientDashboard() {
             component="button"
             type="button"
             onClick={() => {
+              const currentQ = officialQuestionQueue[officialQuestionIndex] || null;
+              const promptText = pickQuestionPrompt(currentQ, language);
+              setAddQuestionnaireMode(true);
+              setAddQuestionnaireActive(currentQ);
+              setSelectedTopicId(null);
+              setTopicRailCollapsed(true);
+              setAnalyzeError(null);
+              setAnalysisResult(null);
+              setOfficialQError(null);
+              setChatInput("");
+              setLiveTranscript("");
+              setChatMessages(
+                promptText
+                  ? [{ role: "assistant", text: promptText }]
+                  : [{ role: "assistant", text: t("no_new_questions") }]
+              );
               setSidebarView("add");
               history.replace("/patient-dashboard");
             }}
-            aria-label="Go to add entry page"
+            aria-label={t("aria_logo_questionnaire")}
             sx={{
               flexShrink: 0,
               width: 72,
@@ -1263,25 +1539,28 @@ export default function PatientDashboard() {
         )}
         {officialQuestionQueue.length > 0 && officialQuestionQueue[officialQuestionIndex] ? (
           <Stack component="form" onSubmit={handleOfficialQuestionnaireSubmit} spacing={1}>
-            <Typography variant="body2" sx={{ color: theme.text, lineHeight: 1.45 }}>
-              {officialQuestionQueue[officialQuestionIndex].conversational_prompt ||
-                officialQuestionQueue[officialQuestionIndex].hebrew}
+            <Typography
+              variant="body2"
+              sx={{
+                color: theme.text,
+                lineHeight: 1.45,
+                textAlign: isRtl ? "right" : "left",
+              }}
+              dir={isRtl ? "rtl" : "ltr"}
+            >
+              {pickQuestionPrompt(officialQuestionQueue[officialQuestionIndex], language)}
             </Typography>
-            {officialQuestionQueue[officialQuestionIndex].options?.length ? (
-              <Typography variant="caption" sx={{ color: theme.textMuted, display: "block" }}>
-                {officialQuestionQueue[officialQuestionIndex].options.join(" · ")}
-              </Typography>
-            ) : null}
             <TextField
               value={officialQInput}
               onChange={(e) => setOfficialQInput(e.target.value)}
-              placeholder="Type your answer"
+              placeholder={t("type_your_answer")}
               size="small"
               fullWidth
               multiline
               minRows={1}
               maxRows={3}
               disabled={officialQLoading}
+              inputProps={{ dir: isRtl ? "rtl" : "ltr" }}
             />
             <Button
               type="submit"
@@ -1289,25 +1568,72 @@ export default function PatientDashboard() {
               disabled={officialQLoading || !officialQInput.trim()}
               sx={{ bgcolor: theme.logoGreen, alignSelf: "flex-start", textTransform: "none" }}
             >
-              {officialQLoading ? "Sending…" : "Send"}
+              {officialQLoading ? t("sending") : t("send")}
             </Button>
           </Stack>
         ) : (
-          <Typography variant="caption" sx={{ color: theme.textMuted }}>
-            No new questions right now — we'll bring a few more in the next days.
+          <Typography variant="caption" sx={{ color: theme.textMuted }} dir={isRtl ? "rtl" : "ltr"}>
+            {t("no_new_questions")}
           </Typography>
         )}
       </Box>
-      <Box sx={{ p: 1.5, pt: 1, pb: 1, flexShrink: 0 }}>
+      <Box sx={{ p: 1.5, pt: 1, pb: 1, flexShrink: 0 }} dir={isRtl ? "rtl" : "ltr"}>
         <DailyCheckinCalendar
           value={checkinDateStr}
           onChange={setCheckinDateStr}
           accentColor={theme.logoGreen}
           backgroundColor={theme.sidebarSelectedBg}
+          language={language}
         />
         <Typography variant="caption" sx={{ color: theme.textMuted, mt: 0.5, display: "block" }}>
-          Selected: {checkinDateStr}
+          {t("selected_label")}: {checkinDateStr}
         </Typography>
+        <Box
+          sx={{
+            mt: 1.25,
+            display: "flex",
+            justifyContent: isRtl ? "flex-start" : "flex-end",
+          }}
+        >
+          <Box
+            component="button"
+            type="button"
+            onClick={() => setLanguage(language === "he" ? "en" : "he")}
+            aria-label={t("language_label")}
+            title={language === "he" ? "Switch to English" : "החלף לעברית"}
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 0.75,
+              border: `1px solid ${alpha(theme.logoGreen, 0.4)}`,
+              borderRadius: 999,
+              bgcolor: "#fff",
+              cursor: "pointer",
+              px: 1.25,
+              py: 0.5,
+              fontFamily: "Roboto, sans-serif",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              color: theme.logoGreen,
+              boxShadow: "0 1px 2px rgba(31,45,61,0.08)",
+              transition: "background-color 0.18s ease, color 0.18s ease, transform 0.18s ease",
+              "&:hover": {
+                bgcolor: alpha(theme.logoGreen, 0.1),
+                transform: "translateY(-1px)",
+              },
+              "&:focus-visible": {
+                outline: `2px solid ${theme.logoGreen}`,
+                outlineOffset: 2,
+              },
+            }}
+          >
+            <Translate size={16} weight="bold" />
+            <Box component="span" sx={{ lineHeight: 1 }}>
+              {language === "he" ? "עב" : "EN"}
+            </Box>
+          </Box>
+        </Box>
       </Box>
     </Box>
   );
@@ -1324,12 +1650,20 @@ export default function PatientDashboard() {
       }}
       profileSelected={sidebarView === "profile"}
       theme={theme}
+      labels={{
+        myProfile: t("my_profile"),
+        logout: t("logout"),
+        openSidebar: t("open_sidebar"),
+        closeSidebar: t("close_sidebar"),
+      }}
       navItems={
         <>
           <ListItemButton
             selected={sidebarView === "dashboard"}
             onClick={() => {
               setSidebarView("dashboard");
+              setAddQuestionnaireMode(false);
+              setAddQuestionnaireActive(null);
               history.replace("/patient-dashboard");
             }}
             sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
@@ -1337,13 +1671,29 @@ export default function PatientDashboard() {
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <ChartPieSlice size={22} />
             </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Dashboard" />}
+            {sidebarOpen && <ListItemText primary={t("dashboard_nav")} />}
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "add"}
             onClick={() => {
-              setSidebarView("add");
+              const currentQ = officialQuestionQueue[officialQuestionIndex] || null;
+              const promptText = pickQuestionPrompt(currentQ, language);
+              setAddQuestionnaireMode(true);
+              setAddQuestionnaireActive(currentQ);
+              setSelectedTopicId(null);
+              setTopicRailCollapsed(true);
+              setAnalyzeError(null);
+              setAnalysisResult(null);
+              setOfficialQError(null);
+              setChatInput("");
+              setLiveTranscript("");
               setFormError(null);
+              setChatMessages(
+                promptText
+                  ? [{ role: "assistant", text: promptText }]
+                  : [{ role: "assistant", text: t("no_new_questions") }]
+              );
+              setSidebarView("add");
               history.replace("/patient-dashboard");
             }}
             sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
@@ -1351,7 +1701,7 @@ export default function PatientDashboard() {
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <PlusCircle size={22} />
             </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Add daily metrics" />}
+            {sidebarOpen && <ListItemText primary={t("add_nav")} />}
           </ListItemButton>
           <ListItemButton
             selected={sidebarView === "statistics"}
@@ -1364,22 +1714,7 @@ export default function PatientDashboard() {
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
               <ChartBar size={22} />
             </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Statistics" />}
-          </ListItemButton>
-          <ListItemButton
-            disabled={patientId == null}
-            onClick={() => {
-              if (patientId == null) return;
-              localStorage.setItem("onboarding_patient_id", String(patientId));
-              localStorage.removeItem("onboarding_language_choice");
-              history.push("/onboarding");
-            }}
-            sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
-          >
-            <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
-              <ChatCircle size={22} />
-            </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Onboarding" />}
+            {sidebarOpen && <ListItemText primary={t("statistics_nav")} />}
           </ListItemButton>
           <ListItemButton disabled sx={{ opacity: 0.7, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}>
             <ListItemIcon sx={{ minWidth: 40, width: 40, height: 40, justifyContent: "center", alignItems: "center", "& svg": { width: 22, height: 22, flexShrink: 0 } }}>
@@ -1387,8 +1722,8 @@ export default function PatientDashboard() {
             </ListItemIcon>
             {sidebarOpen && (
               <ListItemText
-                primary="Device"
-                secondary="Demo – not active. In production, sleep & steps sync from your wearable."
+                primary={t("device_nav")}
+                secondary={t("device_secondary")}
                 primaryTypographyProps={{ fontSize: "0.95rem" }}
                 secondaryTypographyProps={{ fontSize: "0.7rem" }}
               />
@@ -1428,21 +1763,6 @@ export default function PatientDashboard() {
       <Container maxWidth="lg" sx={{ flexShrink: 0, pt: 1.5, pb: 0, px: { xs: 2, sm: 3 } }}>
         {/* Quick stats row with donut charts */}
         <Box sx={{ mb: 1.5 }}>
-          <Typography
-            variant="subtitle2"
-            sx={{
-              display: "block",
-              color: theme.text,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              mb: 1,
-              mt: 0,
-            }}
-          >
-            Today · 8 questionnaire parts (0–100)
-          </Typography>
           <Grid container spacing={1.25}>
             {todayDonutMetrics.map((m) => {
               const Icon = m.Icon;
@@ -1457,6 +1777,10 @@ export default function PatientDashboard() {
                       ...donutRowCardSx,
                       cursor: "pointer",
                       "&:focus-visible": { outline: `2px solid ${m.color}`, outlineOffset: 2 },
+                      "&:hover .donut-pop, &:focus-visible .donut-pop": {
+                        boxShadow:
+                          "0 0 0 1px rgba(31,45,61,0.1), 0 0 12px 1px rgba(31,45,61,0.16), 0 0 22px 3px rgba(31,45,61,0.08)",
+                      },
                     }}
                     onClick={() => {
                       if (weeklyId == null) {
@@ -1482,15 +1806,19 @@ export default function PatientDashboard() {
                   >
                     <CardContent sx={donutRowCardContentSx}>
                       <Box
+                        className="donut-pop"
                         sx={{
-                          width: 104,
-                          height: 104,
+                          width: 98,
+                          height: 98,
                           borderRadius: "50%",
                           bgcolor: alpha(m.color, 0.08),
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0,
+                          boxShadow:
+                            "0 0 0 1px rgba(31,45,61,0.06), 0 0 10px 0px rgba(31,45,61,0.12), 0 0 18px 2px rgba(31,45,61,0.06)",
+                          transition: "box-shadow 0.2s ease",
                         }}
                       >
                         <DonutChart
@@ -1560,9 +1888,6 @@ export default function PatientDashboard() {
           boxSizing: "border-box",
         }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.text, mb: 0.25, flexShrink: 0 }}>
-          Current grade — 8 questionnaire parts (0–100)
-        </Typography>
         <QuestionnairePartsBarChart parts={todayDonutMetrics} theme={theme} />
       </Box>
         </Box>
@@ -1618,11 +1943,11 @@ export default function PatientDashboard() {
             {formError && (
               <Alert severity="error" onClose={() => setFormError(null)} sx={{ mb: 2, mt: 0 }}>{formError}</Alert>
             )}
-            {!selectedTopic ? (
+            {!selectedTopic && !addQuestionnaireMode ? (
               <Card sx={{ ...cardSx, mt: 2 }}>
                 <CardContent>
-                  <Typography sx={{ color: theme.textMuted }}>
-                    Select a FANTASTIC topic from the right sidebar to start your conversational entry.
+                  <Typography sx={{ color: theme.textMuted }} dir={isRtl ? "rtl" : "ltr"}>
+                    {t("select_topic")}
                   </Typography>
                 </CardContent>
               </Card>
@@ -1747,8 +2072,14 @@ export default function PatientDashboard() {
                         >
                         <Stack spacing={2}>
                           {chatMessages.length === 0 && (
-                            <Typography variant="body1" sx={{ color: theme.textMuted, fontSize: "1.05rem", lineHeight: 1.6 }}>
-                              Speak or type freely. We will extract structured details for {selectedTopic.label.toLowerCase()}.
+                            <Typography
+                              variant="body1"
+                              sx={{ color: theme.textMuted, fontSize: "1.05rem", lineHeight: 1.6, textAlign: isRtl ? "right" : "left" }}
+                              dir={isRtl ? "rtl" : "ltr"}
+                            >
+                              {addQuestionnaireMode
+                                ? t("chat_empty_questionnaire")
+                                : t("chat_empty_default", selectedTopic ? t(selectedTopic.labelKey).toLowerCase() : t("topic_nutrition").toLowerCase())}
                             </Typography>
                           )}
                           {chatMessages.map((m, idx) =>
@@ -1791,7 +2122,10 @@ export default function PatientDashboard() {
                                     boxShadow: "0 1px 3px rgba(31,45,61,0.06)",
                                   }}
                                 >
-                                  <Typography sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                  <Typography
+                                    sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word", textAlign: isRtl ? "right" : "left" }}
+                                    dir={isRtl ? "rtl" : "ltr"}
+                                  >
                                     {m.text}
                                   </Typography>
                                 </Box>
@@ -1808,7 +2142,10 @@ export default function PatientDashboard() {
                                     border: ADD_ENTRY_CHAT.userBorder(theme.primary),
                                   }}
                                 >
-                                  <Typography sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                  <Typography
+                                    sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word", textAlign: isRtl ? "right" : "left" }}
+                                    dir={isRtl ? "rtl" : "ltr"}
+                                  >
                                     {m.text}
                                   </Typography>
                                 </Box>
@@ -1827,8 +2164,11 @@ export default function PatientDashboard() {
                                   border: ADD_ENTRY_CHAT.liveBorder,
                                 }}
                               >
-                                <Typography sx={{ fontSize: "1rem", color: theme.textMuted }}>
-                                  Listening: {liveTranscript}
+                                <Typography
+                                  sx={{ fontSize: "1rem", color: theme.textMuted, textAlign: isRtl ? "right" : "left" }}
+                                  dir={isRtl ? "rtl" : "ltr"}
+                                >
+                                  {t("listening_label")}: {liveTranscript}
                                 </Typography>
                               </Box>
                             </Box>
@@ -1845,7 +2185,7 @@ export default function PatientDashboard() {
 
                       <Box
                         component="form"
-                        onSubmit={handleAnalyzeTopic}
+                        onSubmit={addQuestionnaireMode ? handleAddEntryQuestionnaireSubmit : handleAnalyzeTopic}
                         sx={{
                           flexShrink: 0,
                           pt: 2,
@@ -1872,16 +2212,21 @@ export default function PatientDashboard() {
                               bgcolor: isListening ? alpha(theme.danger, 0.26) : "#f1f5f9",
                             },
                           }}
-                          title={speechRecognitionSupported ? "Toggle microphone" : "Speech recognition is not supported in this browser"}
+                          title={speechRecognitionSupported ? t("aria_mic_supported") : t("aria_mic_unsupported")}
                         >
                           <Microphone size={28} weight="duotone" />
                         </IconButton>
                         <TextField
                           fullWidth
                           size="medium"
-                          placeholder={`Share your ${selectedTopic.label.toLowerCase()} details...`}
+                          placeholder={
+                            addQuestionnaireMode
+                              ? t("chat_input_questionnaire")
+                              : t("chat_input_default", selectedTopic ? t(selectedTopic.labelKey).toLowerCase() : t("topic_nutrition").toLowerCase())
+                          }
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
+                          inputProps={{ dir: isRtl ? "rtl" : "ltr" }}
                           sx={{
                             "& .MuiOutlinedInput-root": {
                               borderRadius: 2.5,
@@ -1898,7 +2243,11 @@ export default function PatientDashboard() {
                         <IconButton
                           type="submit"
                           size="large"
-                          disabled={isAnalyzing || !chatInput.trim()}
+                          disabled={
+                            isAnalyzing ||
+                            !chatInput.trim() ||
+                            (addQuestionnaireMode && !addQuestionnaireActive)
+                          }
                           sx={{ width: 52, height: 52 }}
                         >
                           <PaperPlaneTilt size={28} weight="duotone" />
@@ -1940,12 +2289,12 @@ export default function PatientDashboard() {
               <Stack spacing={0} sx={{ width: "100%", minHeight: { lg: "100%" }, flex: { lg: 1 } }}>
                 {ADD_ENTRY_TOPICS.map((topic) => {
                   const Icon = topic.Icon;
-                  const selected = selectedTopicId === topic.id;
-                  const accent = addTopicPalette[ADD_ENTRY_TOPICS.indexOf(topic) % addTopicPalette.length];
+                  const selected = !addQuestionnaireMode && selectedTopicId === topic.id;
+                  const accent = topic.color;
                   return (
                     <Card
                       key={topic.id}
-                      onClick={() => handleTopicSelect(topic.id)}
+                      onClick={() => handleTopicSelect(topic)}
                       sx={{
                         width: "100%",
                         flex: { lg: 1 },
@@ -1970,10 +2319,13 @@ export default function PatientDashboard() {
                           gap: topicRailNarrow ? 0 : 1,
                         }}
                       >
-                        <Icon size={topicRailNarrow ? 26 : 24} color={accent} />
+                        <Icon size={topicRailNarrow ? 26 : 24} color={accent} weight="duotone" />
                         {!topicRailNarrow && (
-                          <Typography sx={{ color: selected ? accent : theme.text, fontWeight: selected ? 700 : 500, fontSize: "1rem", lineHeight: 1.25 }}>
-                            {topic.label}
+                          <Typography
+                            sx={{ color: selected ? accent : theme.text, fontWeight: selected ? 700 : 500, fontSize: "1rem", lineHeight: 1.25, textAlign: isRtl ? "right" : "left" }}
+                            dir={isRtl ? "rtl" : "ltr"}
+                          >
+                            {t(topic.labelKey)}
                           </Typography>
                         )}
                       </CardContent>

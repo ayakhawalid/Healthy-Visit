@@ -10,7 +10,10 @@ from fastapi import APIRouter, HTTPException
 from database import conn
 from models import DailyMetrics, LifestyleQuestionnaireAnswers, LifestyleQuestionnairePrompts, PatientProfile
 from official_q.catalog import get_question, to_public_dict
-from official_q.conversational import norm_chat_lang, scripted_question_line
+from official_q.conversational import (
+    conversational_question_for_item,
+    norm_chat_lang,
+)
 from official_q.parse_answer import parse_answer
 from official_q.radar import radar_for_patient_rows
 from official_q.schedule import pick_daily_questions
@@ -162,7 +165,7 @@ def get_daily_batch(
         q = get_question(qid)
         if q:
             d = to_public_dict(q)
-            d["conversational_prompt"] = scripted_question_line(q, lang)
+            d["conversational_prompt"] = conversational_question_for_item(q, lang)
             items.append(d)
     return {
         "patient_id": patient_id,

@@ -17,7 +17,8 @@ import logo from "../logo.svg";
 export const SIDEBAR_WIDTH = 260;
 export const SIDEBAR_COLLAPSED_WIDTH = 72;
 
-/** Matches PatientDashboard sidebar chrome (logo, avatar, collapse, profile + logout). */
+/** Matches PatientDashboard sidebar chrome (logo, avatar, collapse, profile + logout).
+ *  `labels` swaps the English defaults for the active UI language. */
 export default function DashboardShell({
   user,
   sidebarOpen,
@@ -28,9 +29,14 @@ export default function DashboardShell({
   profileHref = "/profile",
   theme,
   navItems,
+  labels = {},
   children,
 }) {
   const sidebarWidth = sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_COLLAPSED_WIDTH;
+  const myProfileLabel = labels?.myProfile ?? "My profile";
+  const logoutLabel = labels?.logout ?? "Logout";
+  const openSidebarLabel = labels?.openSidebar ?? "Open sidebar";
+  const closeSidebarLabel = labels?.closeSidebar ?? "Close sidebar";
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: theme.bg, width: "100%" }}>
@@ -43,7 +49,7 @@ export default function DashboardShell({
           zIndex: 1100,
           width: sidebarWidth,
           height: "100vh",
-          bgcolor: "#fff",
+          bgcolor: theme.sidebarBg ?? "#fff",
           display: "flex",
           flexDirection: "column",
           boxShadow: theme.cardShadow,
@@ -83,7 +89,7 @@ export default function DashboardShell({
                   size="small"
                   onClick={() => setSidebarOpen(false)}
                   sx={{ flexShrink: 0, color: theme.textMuted }}
-                  aria-label="Close sidebar"
+                  aria-label={closeSidebarLabel}
                 >
                   <CaretLeft size={20} />
                 </IconButton>
@@ -122,7 +128,7 @@ export default function DashboardShell({
               size="medium"
               onClick={() => setSidebarOpen(true)}
               sx={{ color: theme.textMuted }}
-              aria-label="Open sidebar"
+              aria-label={openSidebarLabel}
             >
               <CaretRight size={24} />
             </IconButton>
@@ -137,14 +143,24 @@ export default function DashboardShell({
               onClick={onProfileClick}
               sx={{
                 ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}),
-                ...(theme.sidebarSelectedBg
+                ...((theme.leftNavSelectedBg ?? theme.sidebarSelectedBg)
                   ? {
                       "&.Mui-selected": {
-                        bgcolor: theme.sidebarSelectedBg,
+                        bgcolor: theme.leftNavSelectedBg ?? theme.sidebarSelectedBg,
                         color: theme.text,
-                        "&:hover": { bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg },
+                        "&:hover": {
+                          bgcolor:
+                            theme.leftNavSelectedHoverBg ??
+                            theme.sidebarSelectedHoverBg ??
+                            theme.leftNavSelectedBg ??
+                            theme.sidebarSelectedBg,
+                        },
                         "&.Mui-focusVisible": {
-                          bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg,
+                          bgcolor:
+                            theme.leftNavSelectedHoverBg ??
+                            theme.sidebarSelectedHoverBg ??
+                            theme.leftNavSelectedBg ??
+                            theme.sidebarSelectedBg,
                         },
                         "& .MuiListItemIcon-root": { color: theme.text },
                       },
@@ -164,7 +180,7 @@ export default function DashboardShell({
               >
                 <User size={22} />
               </ListItemIcon>
-              {sidebarOpen && <ListItemText primary="My profile" />}
+              {sidebarOpen && <ListItemText primary={myProfileLabel} />}
             </ListItemButton>
           ) : (
             <ListItemButton
@@ -173,14 +189,24 @@ export default function DashboardShell({
               selected={profileSelected}
               sx={{
                 ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}),
-                ...(theme.sidebarSelectedBg
+                ...((theme.leftNavSelectedBg ?? theme.sidebarSelectedBg)
                   ? {
                       "&.Mui-selected": {
-                        bgcolor: theme.sidebarSelectedBg,
+                        bgcolor: theme.leftNavSelectedBg ?? theme.sidebarSelectedBg,
                         color: theme.text,
-                        "&:hover": { bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg },
+                        "&:hover": {
+                          bgcolor:
+                            theme.leftNavSelectedHoverBg ??
+                            theme.sidebarSelectedHoverBg ??
+                            theme.leftNavSelectedBg ??
+                            theme.sidebarSelectedBg,
+                        },
                         "&.Mui-focusVisible": {
-                          bgcolor: theme.sidebarSelectedHoverBg ?? theme.sidebarSelectedBg,
+                          bgcolor:
+                            theme.leftNavSelectedHoverBg ??
+                            theme.sidebarSelectedHoverBg ??
+                            theme.leftNavSelectedBg ??
+                            theme.sidebarSelectedBg,
                         },
                         "& .MuiListItemIcon-root": { color: theme.text },
                       },
@@ -200,7 +226,7 @@ export default function DashboardShell({
               >
                 <User size={22} />
               </ListItemIcon>
-              {sidebarOpen && <ListItemText primary="My profile" />}
+              {sidebarOpen && <ListItemText primary={myProfileLabel} />}
             </ListItemButton>
           )}
           <ListItemButton
@@ -220,7 +246,7 @@ export default function DashboardShell({
             >
               <SignOut size={22} />
             </ListItemIcon>
-            {sidebarOpen && <ListItemText primary="Logout" />}
+            {sidebarOpen && <ListItemText primary={logoutLabel} />}
           </ListItemButton>
         </List>
       </Box>

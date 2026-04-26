@@ -5,6 +5,19 @@ import {
   getDaysInWeeksInMonth,
 } from "./getDaysInWeeksInMonth";
 
+const I18N_CAL = {
+  en: {
+    weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    today: "Today",
+  },
+  he: {
+    weekdays: ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"],
+    months: ["ינו", "פבר", "מרץ", "אפר", "מאי", "יונ", "יול", "אוג", "ספט", "אוק", "נוב", "דצמ"],
+    today: "היום",
+  },
+};
+
 const pad2 = (n) => String(n).padStart(2, "0");
 
 function toISO({ year, month, day }) {
@@ -66,7 +79,11 @@ export default function DailyCheckinCalendar({
   onChange,
   accentColor = "#16a34a",
   backgroundColor = "#f0fdf4",
+  language = "en",
 }) {
+  const lang = I18N_CAL[language] ? language : "en";
+  const calStrings = I18N_CAL[lang];
+  const isRtl = lang === "he";
   const selected = parseISO(value) || { ...initialState };
   const [view, setView] = useState(() => {
     const p = parseISO(value);
@@ -117,6 +134,7 @@ export default function DailyCheckinCalendar({
 
   return (
     <div
+      dir={isRtl ? "rtl" : "ltr"}
       style={{
         maxWidth: 360,
         width: "100%",
@@ -156,7 +174,7 @@ export default function DailyCheckinCalendar({
           <span onClick={previousMonth} style={{ cursor: "pointer", padding: "0 4px" }} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && previousMonth()}>
             ❮
           </span>
-          <span>{`${getShortMonthName(view.month)} ${view.year}`}</span>
+          <span>{`${calStrings.months[view.month] || getShortMonthName(view.month)} ${view.year}`}</span>
           <span onClick={nextMonth} style={{ cursor: "pointer", padding: "0 4px" }} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && nextMonth()}>
             ❯
           </span>
@@ -165,12 +183,12 @@ export default function DailyCheckinCalendar({
 
       <thead>
         <tr>
-          {getWeekdays().map((d, i) => {
+          {(calStrings.weekdays || getWeekdays()).map((d, i) => {
             const isWeekend = i > 4;
             const weekendStyle = { color: "#a4a4a4" };
             return (
               <th
-                key={d}
+                key={`${d}-${i}`}
                 scope="col"
                 role="columnheader"
                 aria-label={d}
@@ -182,7 +200,7 @@ export default function DailyCheckinCalendar({
                   ...(isWeekend ? weekendStyle : {}),
                 }}
               >
-                {d.charAt(0)}
+                {lang === "he" ? d : d.charAt(0)}
               </th>
             );
           })}
@@ -287,7 +305,7 @@ export default function DailyCheckinCalendar({
             }}
             onClick={setToday}
           >
-            Today
+            {calStrings.today}
           </td>
         </tr>
       </tfoot>

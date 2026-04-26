@@ -98,8 +98,14 @@ def _fallback_question(_q: QItem, lang: Literal["he", "en"]) -> str:
 def scripted_question_line(q: QItem, lang: Literal["he", "en"]) -> str:
     """Deterministic question text — used when the LLM is down and to avoid catalog-label echoes."""
     if lang == "en":
-        return SCRIPT_QUESTION_EN.get(q.id, _fallback_question(q, "en"))
-    return SCRIPT_QUESTION_HE.get(q.id, _fallback_question(q, "he"))
+        return SCRIPT_QUESTION_EN.get(q.id) or _fallback_question(q, "en")
+    scripted_he = SCRIPT_QUESTION_HE.get(q.id)
+    if scripted_he:
+        return scripted_he
+    catalog_he = (q.hebrew or "").strip()
+    if catalog_he:
+        return catalog_he
+    return _fallback_question(q, "he")
 
 
 def conversational_question_for_item(
@@ -118,7 +124,10 @@ def conversational_question_for_item(
         "- Do NOT use bare catalog labels as the whole question (e.g. \"full name\", \"שם מלא\", "
         "\"date of birth\", \"תאריך לידה\", \"gender\", \"מגדר\").\n"
         "- Use full sentences; a short lead-in is fine if it feels human.\n"
-        "- If the item is multiple-choice, you may say they can pick one or answer in their own words.\n"
+        "- The patient answers in free language. NEVER list the closed-choice options "
+        "inside the question (no parentheses with words like \"never, sometimes, often\", "
+        "no \"choose one of...\", no scale ranges like \"0–3\"). Just ask the question naturally "
+        "and let them reply however they want.\n"
         "- Do not mention question numbers, JSON, scoring, or the word \"questionnaire\".\n"
         "- Output only the question text — no quotes, bullets, or numbering.\n"
     )
