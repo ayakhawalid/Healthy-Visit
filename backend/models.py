@@ -89,4 +89,25 @@ LifestyleQuestionnairePrompts = Table('LifestyleQuestionnairePrompts', meta,
     Column('answered', Boolean, nullable=False, default=False),
 )
 
+# Patient chose "not today" — no more daily questions until the next calendar day.
+QuestionnaireDailyDecline = Table(
+    'QuestionnaireDailyDecline',
+    meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id'), nullable=False),
+    Column('decline_date', Date, nullable=False),
+)
+
+# After "Not today" (skip) we delete the open prompt row; this stores the
+# first calendar day the question may be offered again (same window as
+# schedule.RETRY_AFTER_DAYS for unanswered prompts).
+QuestionnaireQuestionSnooze = Table(
+    'QuestionnaireQuestionSnooze',
+    meta,
+    Column('id', Integer, unique=True, primary_key=True),
+    Column('patient_id', Integer, ForeignKey('Users.id'), nullable=False),
+    Column('question_id', String, nullable=False),
+    Column('snooze_until', Date, nullable=False),
+)
+
 meta.create_all(engine)

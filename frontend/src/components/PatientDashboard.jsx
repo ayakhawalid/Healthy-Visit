@@ -184,7 +184,18 @@ const I18N = {
     listening_label: "Listening",
     profile_via_onboarding: "Profile is filled via the onboarding flow — open Onboarding from the sidebar.",
     questionnaire_done: "Thanks — that's all the questions for today. We'll bring a few more in the next days.",
+    daily_batch_complete: "You have finished today’s daily questions. That’s all for now — we will offer a fresh batch another day.",
+    daily_skipped_today:
+      "No problem — we will not ask again today. Tomorrow you will see other questions; anything you left unanswered can come back after a few days.",
+    not_today_button: "Not today",
+    not_today_next_question: "Skipping — here's the next question.",
     select_topic: "Select a topic from the right sidebar to start your conversational entry.",
+    viewing_topic_history: (topic) => `Your previous answers about ${topic}`,
+    no_session_answers: (topic) => `No previous answers about ${topic} yet.`,
+    back_to_current_question: "Back to current question",
+    back_label: "Back",
+    answer_text_unavailable: "Original wording wasn't saved",
+    saved_as_label: "Saved as",
     structured_extracted: "Structured data extracted. Review the summary and confirm to save.",
     aria_logo_questionnaire: "Answer today's question on the Add daily metrics page",
     aria_mic_supported: "Toggle microphone",
@@ -233,7 +244,18 @@ const I18N = {
     listening_label: "מקשיב",
     profile_via_onboarding: "הפרופיל ממולא דרך מסך הקליטה — פתח/י אותו מסרגל הצד.",
     questionnaire_done: "תודה — אלו כל השאלות להיום. נביא עוד בימים הקרובים.",
+    daily_batch_complete: "סיימת את שאלות היום. זה הכול לעת עתה — מחר נציע אצווה חדשה.",
+    daily_skipped_today:
+      "בסדר — לא נשאל שוב היום. מחר יופיעו שאלות אחרות; שאלות שלא נענו יכולות לחזור אחרי כמה ימים.",
+    not_today_button: "לא היום",
+    not_today_next_question: "מדלגים — השאלה הבאה:",
     select_topic: "בחר/י נושא מסרגל הצד כדי להתחיל בשיחה.",
+    viewing_topic_history: (topic) => `התשובות הקודמות שלך בנושא ${topic}`,
+    no_session_answers: (topic) => `אין עדיין תשובות שמורות בנושא ${topic}.`,
+    back_to_current_question: "חזרה לשאלה הנוכחית",
+    back_label: "חזרה",
+    answer_text_unavailable: "הניסוח המקורי לא נשמר",
+    saved_as_label: "נשמר כ-",
     structured_extracted: "המידע נחלץ. סקור/י את הסיכום ואשר/י לשמור.",
     aria_logo_questionnaire: "ענה על שאלת היום בעמוד הוספת מדדים",
     aria_mic_supported: "הפעל/כבה מיקרופון",
@@ -295,6 +317,28 @@ function pickQuestionPrompt(q, language = "he") {
   if (conv && !GENERIC_QUESTION_FALLBACKS.includes(conv)) return conv;
   if (language === "he" && hebrew) return hebrew;
   return conv || hebrew || "";
+}
+
+/**
+ * Map a question's catalog `part` (Hebrew א–ח) to the matching topic id in
+ * `ADD_ENTRY_TOPICS`. Used to highlight the right-rail subject that owns the
+ * question currently shown in the daily-metrics chat.
+ */
+const QUESTION_PART_TO_TOPIC_ID = {
+  "א": "profile",
+  "ב": "nutrition",
+  "ג": "activity",
+  "ד": "sleep",
+  "ה": "substances",
+  "ו": "mind",
+  "ז": "relationships",
+  "ח": "motivation",
+};
+
+function questionTopicId(q) {
+  if (!q) return null;
+  const part = (q.part || "").trim();
+  return QUESTION_PART_TO_TOPIC_ID[part] || null;
 }
 
 /** Human-readable Today donut stat line. Lifestyle domains use 0–100. */
@@ -862,6 +906,8 @@ export default function PatientDashboard() {
   const recognitionRef = useRef(null);
   const recognitionActiveRef = useRef(false);
   const recognitionStartingRef = useRef(false);
+  /** Tracks the last daily-question id while in questionnaire mode (for leaving topic-history when the question advances). */
+  const lastActiveQuestionnaireQidRef = useRef(null);
   const [checkinDateStr, setCheckinDateStr] = useState(() => new Date().toISOString().slice(0, 10));
   /** null = all metrics on weekly chart; otherwise matches WeeklyMetricCircles ids (activity, sleep, …) */
   const [weeklyChartMetricId, setWeeklyChartMetricId] = useState(null);
@@ -869,6 +915,11 @@ export default function PatientDashboard() {
   const [officialProgress, setOfficialProgress] = useState(null);
   const [officialQuestionQueue, setOfficialQuestionQueue] = useState([]);
   const [officialQuestionIndex, setOfficialQuestionIndex] = useState(0);
+  /** From `/official-questionnaire/daily` — patient chose "not today" for this calendar day. */
+  const [officialSessionSkippedToday, setOfficialSessionSkippedToday] = useState(false);
+  /** Today's capped batch (e.g. 5) is fully answered — backend returns no further questions today. */
+  const [officialDailyBatchComplete, setOfficialDailyBatchComplete] = useState(false);
+  const [declineDailySubmitting, setDeclineDailySubmitting] = useState(false);
   const [officialQInput, setOfficialQInput] = useState("");
   const [officialQLoading, setOfficialQLoading] = useState(false);
   const [officialQError, setOfficialQError] = useState(null);
@@ -878,6 +929,18 @@ export default function PatientDashboard() {
   const [addQuestionnaireMode, setAddQuestionnaireMode] = useState(false);
   /** While in questionnaire mode, this is the question the patient is currently answering. */
   const [addQuestionnaireActive, setAddQuestionnaireActive] = useState(null);
+  /** In-session log of every (question, answer) pair the patient submitted from
+   *  the daily-metrics chat. Used so the right-rail topics can replay what was
+   *  already answered for that subject. */
+  const [questionnaireTranscript, setQuestionnaireTranscript] = useState([]);
+  /** Every question the patient has already answered across previous days, as
+   *  returned by `/official-questionnaire/history`. Refreshed when entering
+   *  questionnaire mode or toggling language so the saved scripted prompts
+   *  arrive in the active language. */
+  const [historicalAnswers, setHistoricalAnswers] = useState([]);
+  /** When set, the chat area is replaying the session transcript filtered to
+   *  this topic id. Null means we're showing the live conversation. */
+  const [viewingTopicId, setViewingTopicId] = useState(null);
   /** UI language ("he" | "en"). Persisted in localStorage so the backend
    *  questionnaire fetch + the speech recognizer pick the same language as the UI. */
   const [language, setLanguage] = useState(() => {
@@ -934,6 +997,16 @@ export default function PatientDashboard() {
 
   const patientId = user?.id;
 
+  const loadQuestionnaireHistory = useCallback(() => {
+    if (patientId == null) return;
+    api
+      .get("/official-questionnaire/history", {
+        params: { patient_id: patientId, language },
+      })
+      .then((r) => setHistoricalAnswers(r.data?.answers || []))
+      .catch(() => setHistoricalAnswers([]));
+  }, [patientId, language]);
+
   const loadOfficialQuestionnaire = useCallback(() => {
     if (patientId == null) return;
     api
@@ -948,12 +1021,66 @@ export default function PatientDashboard() {
         const qs = r.data.questions || [];
         setOfficialQuestionQueue(qs);
         setOfficialQuestionIndex(0);
+        setOfficialSessionSkippedToday(!!r.data.session_closed_today);
+        setOfficialDailyBatchComplete(!!r.data.daily_batch_complete);
       })
       .catch(() => {
         setOfficialQuestionQueue([]);
         setOfficialQuestionIndex(0);
+        setOfficialSessionSkippedToday(false);
+        setOfficialDailyBatchComplete(false);
       });
   }, [patientId, language]);
+
+  /** "Not today" = skip this question; backend removes today's prompt row and may offer another up to the daily cap. */
+  const handleNotTodaySkipQuestion = useCallback(() => {
+    if (patientId == null) return;
+    const q = addQuestionnaireActive;
+    const qid = q?.question_id != null ? String(q.question_id) : "";
+    if (!qid) return;
+    setDeclineDailySubmitting(true);
+    setAnalyzeError(null);
+    api
+      .post("/official-questionnaire/skip-question", { patient_id: patientId, question_id: qid })
+      .then(() =>
+        api.get("/official-questionnaire/daily", {
+          params: { patient_id: patientId, language },
+        })
+      )
+      .then((r) => {
+        const qs = r.data.questions || [];
+        setOfficialQuestionQueue(qs);
+        setOfficialQuestionIndex(0);
+        setOfficialSessionSkippedToday(!!r.data.session_closed_today);
+        setOfficialDailyBatchComplete(!!r.data.daily_batch_complete);
+        setViewingTopicId(null);
+        const next = qs[0] || null;
+        setAddQuestionnaireActive(next);
+        if (next) {
+          const nextPrompt = pickQuestionPrompt(next, language);
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              text: `${t("not_today_next_question")}\n\n${nextPrompt}`,
+            },
+          ]);
+        } else {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: "assistant", text: t("daily_batch_complete") },
+          ]);
+        }
+        api
+          .get("/official-questionnaire/progress", { params: { patient_id: patientId } })
+          .then((pr) => setOfficialProgress(pr.data))
+          .catch(() => {});
+      })
+      .catch((err) => {
+        setAnalyzeError(err.response?.data?.detail || err.message || t("failed_save_answer"));
+      })
+      .finally(() => setDeclineDailySubmitting(false));
+  }, [patientId, addQuestionnaireActive?.question_id, language, t]);
 
   const refetchMetrics = useCallback(() => {
     if (patientId == null) return;
@@ -1013,6 +1140,40 @@ export default function PatientDashboard() {
     loadOfficialQuestionnaire();
   }, [sidebarView, patientId, loadOfficialQuestionnaire]);
 
+  // Pull the patient's full answer history whenever they enter the
+  // questionnaire chat, open a topic for review (e.g. profile from outside
+  // questionnaire mode), or change languages — that way the right-rail topic
+  // replay can include answers from previous days and the scripted prompts
+  // arrive in the active language.
+  useEffect(() => {
+    if (!addQuestionnaireMode && !viewingTopicId) return;
+    loadQuestionnaireHistory();
+  }, [addQuestionnaireMode, viewingTopicId, loadQuestionnaireHistory]);
+
+  // When the daily API returns no queue because the patient skipped today or
+  // finished the capped batch, show the matching assistant line in the chat.
+  useEffect(() => {
+    if (!addQuestionnaireMode) return;
+    if (officialQuestionQueue.length > 0) return;
+    if (!officialSessionSkippedToday && !officialDailyBatchComplete) return;
+    setAddQuestionnaireActive(null);
+    const text = officialSessionSkippedToday ? t("daily_skipped_today") : t("daily_batch_complete");
+    setChatMessages((prev) => {
+      // Do not replace a multi-turn transcript (e.g. after answering the last
+      // question — the submit handler already appended the wrap-up line).
+      if (prev.length > 1) return prev;
+      if (prev.length === 1 && prev[0].role === "assistant" && prev[0].text === text) return prev;
+      if (prev.length === 1 && prev[0].role === "user") return prev;
+      return [{ role: "assistant", text }];
+    });
+  }, [
+    addQuestionnaireMode,
+    officialQuestionQueue.length,
+    officialSessionSkippedToday,
+    officialDailyBatchComplete,
+    t,
+  ]);
+
   // While the patient is mid-conversation in the daily-metrics chat, swap the
   // currently displayed question text to the newly chosen language.
   useEffect(() => {
@@ -1034,6 +1195,33 @@ export default function PatientDashboard() {
       return prev;
     });
   }, [language, addQuestionnaireMode, officialQuestionQueue, officialQuestionIndex]);
+
+  // When the daily question advances to a new question_id, leave topic-history
+  // review so the new assistant prompt is visible. We intentionally do NOT
+  // compare viewingTopicId to the live question's subject — the patient may
+  // click another topic to read past answers while the current question is
+  // still from a different part; clearing on that mismatch made clicks feel
+  // broken (state was reset in the same tick as the click).
+  useEffect(() => {
+    if (!addQuestionnaireMode) {
+      lastActiveQuestionnaireQidRef.current = null;
+      return;
+    }
+    const q = addQuestionnaireActive;
+    const qid = q?.question_id != null ? String(q.question_id) : null;
+    if (viewingTopicId == null) {
+      if (qid) lastActiveQuestionnaireQidRef.current = qid;
+      return;
+    }
+    if (!qid) return;
+    if (
+      lastActiveQuestionnaireQidRef.current != null &&
+      lastActiveQuestionnaireQidRef.current !== qid
+    ) {
+      setViewingTopicId(null);
+    }
+    lastActiveQuestionnaireQidRef.current = qid;
+  }, [addQuestionnaireMode, addQuestionnaireActive, viewingTopicId]);
 
   const metricsWithRadar = useMemo(
     () => metrics.map((row) => mergeLifestyleRadarIntoRow(normalizeRow(row))),
@@ -1104,6 +1292,74 @@ export default function PatientDashboard() {
     () => ADD_ENTRY_TOPICS.find((t) => t.id === selectedTopicId) || null,
     [selectedTopicId]
   );
+
+  /** Topic the patient is reviewing inside the questionnaire chat (set when
+   *  they click a topic from the right rail mid-conversation). */
+  const viewingTopic = useMemo(
+    () => ADD_ENTRY_TOPICS.find((tp) => tp.id === viewingTopicId) || null,
+    [viewingTopicId]
+  );
+
+  /** Derived chat bubbles: live conversation by default, or a replay of every
+   *  question/answer pair the patient has stored for the chosen topic — both
+   *  past days (`historicalAnswers` from the backend) and any answers given
+   *  in this session (`questionnaireTranscript`). Session answers win over
+   *  the matching historical row so freshly-typed text shows up immediately.
+   *
+   *  Each user bubble also carries `savedAs` — the parser's conclusion for
+   *  that reply — so the patient can audit whether the LLM mapped their
+   *  words to the right option/number. */
+  const displayedMessages = useMemo(() => {
+    if (!viewingTopicId) return chatMessages;
+    const sessionByQid = new Map();
+    questionnaireTranscript.forEach((entry) => {
+      if (questionTopicId(entry.q) !== viewingTopicId) return;
+      sessionByQid.set(String(entry.q.question_id), entry);
+    });
+    const merged = [];
+    historicalAnswers.forEach((h) => {
+      if (questionTopicId(h) !== viewingTopicId) return;
+      const qid = String(h.question_id);
+      if (sessionByQid.has(qid)) return;
+      merged.push({
+        q: h,
+        answerText: h.raw_answer || "",
+        savedAs: h.saved_as || "",
+        answeredAt: h.answered_at || null,
+      });
+    });
+    sessionByQid.forEach((entry) => {
+      merged.push({
+        q: entry.q,
+        answerText: entry.answerText,
+        // Session answers haven't been re-fetched from history yet, so we
+        // don't have `saved_as` until the next history refresh fires.
+        savedAs: entry.savedAs || "",
+        answeredAt: null,
+      });
+    });
+    merged.sort((a, b) => {
+      if (a.answeredAt && b.answeredAt) return a.answeredAt.localeCompare(b.answeredAt);
+      if (a.answeredAt && !b.answeredAt) return -1;
+      if (!a.answeredAt && b.answeredAt) return 1;
+      return 0;
+    });
+    const out = [];
+    merged.forEach((entry) => {
+      out.push({ role: "assistant", text: pickQuestionPrompt(entry.q, language) });
+      if (entry.answerText) {
+        out.push({ role: "user", text: entry.answerText, savedAs: entry.savedAs });
+      } else {
+        out.push({
+          role: "user",
+          text: t("answer_text_unavailable"),
+          placeholder: true,
+          savedAs: entry.savedAs,
+        });
+      }
+    });
+    return out;
+  }, [viewingTopicId, chatMessages, questionnaireTranscript, historicalAnswers, language, t]);
 
   const speechRecognitionSupported =
     typeof window !== "undefined" &&
@@ -1242,11 +1498,28 @@ export default function PatientDashboard() {
         console.warn("Speech recognition stop failed", e);
       }
     }
+    // In daily-metrics questionnaire mode, clicking a topic does NOT abandon
+    // the live conversation — it just shows the patient what they've already
+    // answered for that topic, with a "back to current question" affordance
+    // to resume. Profile is no exception: its onboarding answers are stored
+    // in the same questionnaire table, so we replay them inline instead of
+    // navigating off the page.
+    if (addQuestionnaireMode) {
+      setViewingTopicId(topic.id);
+      setChatInput("");
+      setLiveTranscript("");
+      setAnalyzeError(null);
+      return;
+    }
+    // Outside questionnaire mode, profile is read-only — it has no free-chat
+    // analyzer endpoint, so clicking it shows the saved onboarding Q+A pairs
+    // via the same review UI.
     if (topic && topic.id === "profile") {
-      if (patientId == null) return;
-      localStorage.setItem("onboarding_patient_id", String(patientId));
-      localStorage.removeItem("onboarding_language_choice");
-      history.push("/onboarding");
+      setViewingTopicId(topic.id);
+      setChatInput("");
+      setLiveTranscript("");
+      setAnalyzeError(null);
+      setTopicRailCollapsed(true);
       return;
     }
     setSelectedTopicId(topic.id);
@@ -1258,6 +1531,15 @@ export default function PatientDashboard() {
     setTopicRailCollapsed(true);
     setAddQuestionnaireMode(false);
     setAddQuestionnaireActive(null);
+    setViewingTopicId(null);
+  };
+
+  /** Leave transcript-review mode and return to the live current question. */
+  const handleBackToCurrentQuestion = () => {
+    setViewingTopicId(null);
+    setChatInput("");
+    setLiveTranscript("");
+    setAnalyzeError(null);
   };
 
   const handleMicToggle = () => {
@@ -1303,6 +1585,8 @@ export default function PatientDashboard() {
         user_message: text,
       })
       .then(() => {
+        setQuestionnaireTranscript((prev) => [...prev, { q, answerText: text }]);
+        loadQuestionnaireHistory();
         const remaining = officialQuestionQueue.slice(officialQuestionIndex + 1);
         const nextQ = remaining[0] || null;
         if (nextQ) {
@@ -1491,6 +1775,8 @@ export default function PatientDashboard() {
               setOfficialQError(null);
               setChatInput("");
               setLiveTranscript("");
+              setQuestionnaireTranscript([]);
+              setViewingTopicId(null);
               setChatMessages(
                 promptText
                   ? [{ role: "assistant", text: promptText }]
@@ -1664,6 +1950,7 @@ export default function PatientDashboard() {
               setSidebarView("dashboard");
               setAddQuestionnaireMode(false);
               setAddQuestionnaireActive(null);
+              setViewingTopicId(null);
               history.replace("/patient-dashboard");
             }}
             sx={{ ...sidebarNavSelectedSx, ...(!sidebarOpen ? { justifyContent: "center", px: 0 } : {}) }}
@@ -1688,6 +1975,8 @@ export default function PatientDashboard() {
               setChatInput("");
               setLiveTranscript("");
               setFormError(null);
+              setQuestionnaireTranscript([]);
+              setViewingTopicId(null);
               setChatMessages(
                 promptText
                   ? [{ role: "assistant", text: promptText }]
@@ -2071,18 +2360,59 @@ export default function PatientDashboard() {
                           }}
                         >
                         <Stack spacing={2}>
-                          {chatMessages.length === 0 && (
+                          {viewingTopicId && viewingTopic && (
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 1.5,
+                                flexWrap: "wrap",
+                                px: 0.5,
+                                py: 0.5,
+                              }}
+                            >
+                              <Typography
+                                sx={{ color: theme.text, fontWeight: 600, fontSize: "0.98rem", textAlign: isRtl ? "right" : "left" }}
+                                dir={isRtl ? "rtl" : "ltr"}
+                              >
+                                {t("viewing_topic_history", t(viewingTopic.labelKey))}
+                              </Typography>
+                              <Box
+                                component="button"
+                                type="button"
+                                onClick={handleBackToCurrentQuestion}
+                                sx={{
+                                  border: "none",
+                                  bgcolor: viewingTopic.color,
+                                  color: "#fff",
+                                  px: 1.75,
+                                  py: 0.75,
+                                  borderRadius: 2,
+                                  cursor: "pointer",
+                                  fontSize: "0.92rem",
+                                  fontWeight: 600,
+                                  "&:hover": { bgcolor: alpha(viewingTopic.color, 0.85) },
+                                }}
+                              >
+                                {addQuestionnaireMode ? t("back_to_current_question") : t("back_label")}
+                              </Box>
+                            </Box>
+                          )}
+                          {displayedMessages.length === 0 && (
                             <Typography
                               variant="body1"
                               sx={{ color: theme.textMuted, fontSize: "1.05rem", lineHeight: 1.6, textAlign: isRtl ? "right" : "left" }}
                               dir={isRtl ? "rtl" : "ltr"}
                             >
-                              {addQuestionnaireMode
+                              {viewingTopicId && viewingTopic
+                                ? t("no_session_answers", t(viewingTopic.labelKey).toLowerCase())
+                                : addQuestionnaireMode
                                 ? t("chat_empty_questionnaire")
                                 : t("chat_empty_default", selectedTopic ? t(selectedTopic.labelKey).toLowerCase() : t("topic_nutrition").toLowerCase())}
                             </Typography>
                           )}
-                          {chatMessages.map((m, idx) =>
+                          {displayedMessages.map((m, idx) =>
                             m.role === "assistant" ? (
                               <Box
                                 key={`${m.role}-${idx}`}
@@ -2131,28 +2461,52 @@ export default function PatientDashboard() {
                                 </Box>
                               </Box>
                             ) : (
-                              <Box key={`${m.role}-${idx}`} sx={{ display: "flex", justifyContent: "flex-end" }}>
+                              <Box key={`${m.role}-${idx}`} sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.4 }}>
                                 <Box
                                   sx={{
                                     maxWidth: "min(88%, 560px)",
                                     px: 2,
                                     py: 1.5,
                                     borderRadius: 2,
-                                    bgcolor: ADD_ENTRY_CHAT.userBubble(theme.primary),
-                                    border: ADD_ENTRY_CHAT.userBorder(theme.primary),
+                                    bgcolor: m.placeholder ? "transparent" : ADD_ENTRY_CHAT.userBubble(theme.primary),
+                                    border: m.placeholder ? `1px dashed ${alpha(theme.text, 0.2)}` : ADD_ENTRY_CHAT.userBorder(theme.primary),
                                   }}
                                 >
                                   <Typography
-                                    sx={{ fontSize: "1.05rem", lineHeight: 1.55, color: theme.text, whiteSpace: "pre-wrap", wordBreak: "break-word", textAlign: isRtl ? "right" : "left" }}
+                                    sx={{
+                                      fontSize: m.placeholder ? "0.92rem" : "1.05rem",
+                                      lineHeight: 1.55,
+                                      color: m.placeholder ? theme.textMuted : theme.text,
+                                      fontStyle: m.placeholder ? "italic" : "normal",
+                                      whiteSpace: "pre-wrap",
+                                      wordBreak: "break-word",
+                                      textAlign: isRtl ? "right" : "left",
+                                    }}
                                     dir={isRtl ? "rtl" : "ltr"}
                                   >
                                     {m.text}
                                   </Typography>
                                 </Box>
+                                {m.savedAs && (
+                                  <Typography
+                                    sx={{
+                                      fontSize: "0.78rem",
+                                      lineHeight: 1.3,
+                                      color: theme.textMuted,
+                                      fontStyle: "italic",
+                                      px: 1,
+                                      maxWidth: "min(88%, 560px)",
+                                      textAlign: isRtl ? "right" : "left",
+                                    }}
+                                    dir={isRtl ? "rtl" : "ltr"}
+                                  >
+                                    {t("saved_as_label")}: {m.savedAs}
+                                  </Typography>
+                                )}
                               </Box>
                             )
                           )}
-                          {liveTranscript && (
+                          {!viewingTopicId && liveTranscript && (
                             <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                               <Box
                                 sx={{
@@ -2177,12 +2531,40 @@ export default function PatientDashboard() {
                         </Box>
                       </Box>
 
-                      {analyzeError && (
+                      {analyzeError && !viewingTopicId && (
                         <Alert severity="error" sx={{ mx: 2, mt: 1, mb: 0, flexShrink: 0 }}>
                           {analyzeError}
                         </Alert>
                       )}
 
+                      {!viewingTopicId &&
+                        addQuestionnaireMode &&
+                        officialQuestionQueue.length > 0 &&
+                        !officialSessionSkippedToday &&
+                        addQuestionnaireActive?.question_id != null && (
+                          <Box
+                            sx={{
+                              flexShrink: 0,
+                              px: { xs: 2, sm: 2.5 },
+                              pt: 1,
+                              display: "flex",
+                              justifyContent: isRtl ? "flex-start" : "flex-end",
+                            }}
+                          >
+                            <Button
+                              type="button"
+                              variant="text"
+                              size="small"
+                              disabled={declineDailySubmitting || isAnalyzing}
+                              onClick={handleNotTodaySkipQuestion}
+                              sx={{ color: theme.textMuted, textTransform: "none", fontWeight: 600 }}
+                            >
+                              {declineDailySubmitting ? t("sending") : t("not_today_button")}
+                            </Button>
+                          </Box>
+                        )}
+
+                      {!viewingTopicId && (
                       <Box
                         component="form"
                         onSubmit={addQuestionnaireMode ? handleAddEntryQuestionnaireSubmit : handleAnalyzeTopic}
@@ -2200,7 +2582,11 @@ export default function PatientDashboard() {
                         <IconButton
                           size="large"
                           onClick={handleMicToggle}
-                          disabled={!speechRecognitionSupported}
+                          disabled={
+                            !speechRecognitionSupported ||
+                            (addQuestionnaireMode &&
+                              (!addQuestionnaireActive || officialSessionSkippedToday || officialDailyBatchComplete))
+                          }
                           sx={{
                             width: 52,
                             height: 52,
@@ -2219,6 +2605,12 @@ export default function PatientDashboard() {
                         <TextField
                           fullWidth
                           size="medium"
+                          disabled={
+                            addQuestionnaireMode &&
+                            (!addQuestionnaireActive ||
+                              officialSessionSkippedToday ||
+                              officialDailyBatchComplete)
+                          }
                           placeholder={
                             addQuestionnaireMode
                               ? t("chat_input_questionnaire")
@@ -2246,13 +2638,17 @@ export default function PatientDashboard() {
                           disabled={
                             isAnalyzing ||
                             !chatInput.trim() ||
-                            (addQuestionnaireMode && !addQuestionnaireActive)
+                            (addQuestionnaireMode &&
+                              (!addQuestionnaireActive ||
+                                officialSessionSkippedToday ||
+                                officialDailyBatchComplete))
                           }
                           sx={{ width: 52, height: 52 }}
                         >
                           <PaperPlaneTilt size={28} weight="duotone" />
                         </IconButton>
                       </Box>
+                      )}
                     </CardContent>
                   </Card>
                 </Grid>
@@ -2287,9 +2683,19 @@ export default function PatientDashboard() {
               }}
             >
               <Stack spacing={0} sx={{ width: "100%", minHeight: { lg: "100%" }, flex: { lg: 1 } }}>
-                {ADD_ENTRY_TOPICS.map((topic) => {
+                {(() => {
+                  const activeQuestionTopicId = addQuestionnaireMode
+                    ? questionTopicId(addQuestionnaireActive)
+                    : null;
+                  // While reviewing a topic mid-questionnaire, highlight the
+                  // topic the patient picked; otherwise highlight the topic
+                  // that owns the current live question (or the manually
+                  // selected topic in free-chat mode).
+                  const highlightTopicId = viewingTopicId
+                    ?? (addQuestionnaireMode ? activeQuestionTopicId : selectedTopicId);
+                  return ADD_ENTRY_TOPICS.map((topic) => {
                   const Icon = topic.Icon;
-                  const selected = !addQuestionnaireMode && selectedTopicId === topic.id;
+                  const selected = highlightTopicId === topic.id;
                   const accent = topic.color;
                   return (
                     <Card
@@ -2331,7 +2737,8 @@ export default function PatientDashboard() {
                       </CardContent>
                     </Card>
                   );
-                })}
+                });
+                })()}
               </Stack>
             </Box>
             {rightSidePanel}

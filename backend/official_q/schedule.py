@@ -4,7 +4,7 @@ Gentle 3-week drip: few questions per day, re-prompt after several days if unans
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from official_q.catalog import (
     DAILY_POOL_QIDS,
@@ -21,8 +21,12 @@ _SUPPORTED_KINDS = frozenset(
 # Skip composite blocks until a dedicated UI exists.
 _SKIP_QIDS = frozenset({"61"})
 
-_MAX_PER_DAY = 2
+# Max questions offered per calendar day (total across all /daily calls).
+_MAX_PER_DAY = 5
+# After a question was prompted and left unanswered, wait this many full
+# calendar days before offering it again (see `eligible` in pick_daily_questions).
 _RETRY_AFTER_DAYS = 4
+RETRY_AFTER_DAYS = _RETRY_AFTER_DAYS  # public alias (e.g. skip snooze in CRUD)
 _MAX_PROMPTS_BEFORE_BACKOFF = 6
 
 
@@ -47,11 +51,20 @@ def pick_daily_questions(
     prompt_rows: List[Tuple[str, date, bool]],  # (question_id, prompted_date, answered)
     today: date,
     study_start: Optional[date],
+    *,
+    max_questions: Optional[int] = None,
+    exclude_qids: Optional[Set[str]] = None,
+    snooze_until_by_qid: Optional[Dict[str, date]] = None,
 ) -> List[str]:
     """
-    Return up to _MAX_PER_DAY question ids to show today.
-    Unanswered questions are preferred in catalog order.
-    If a question was prompted several times without an answer, wait _RETRY_AFTER_DAYS before prompting again.
+    Return up to `max_questions` (default `_MAX_PER_DAY`) question ids to show today.
+
+    Unanswered questions are preferred in catalog order. If a question was
+    already prompted and the patient never answered (or chose “not today”
+    while it was still in the batch), `LifestyleQuestionnairePrompts` keeps
+    that history: we wait `_RETRY_AFTER_DAYS` before that question id becomes
+    eligible again, so other questions can run first and skipped items come
+    back after a few days.
     """
     pool = daily_pool_supported()
     if not pool:
@@ -59,6 +72,13 @@ def pick_daily_questions(
 
     if study_start is None:
         study_start = today
+
+    cap = max_questions if max_questions is not None else _MAX_PER_DAY
+    if cap <= 0:
+        return []
+
+    excluded = exclude_qids or set()
+    snooze = snooze_until_by_qid or {}
 
     # After day 21, still allow slow catch-up but cap volume
     day_idx = _study_day_index(study_start, today)
@@ -82,6 +102,11 @@ def pick_daily_questions(
             return False
         if qid in chosen:
             return False
+        if qid in excluded:
+            return False
+        su = snooze.get(qid)
+        if su is not None and today < su:
+            return False
         lp = last_prompt.get(qid)
         if lp is None:
             return True
@@ -99,21 +124,21 @@ def pick_daily_questions(
     start_bias = min(len(pool), max(0, day_idx * 2))
 
     for qid in pool[start_bias:] + pool[:start_bias]:
-        if len(chosen) >= _MAX_PER_DAY:
+        if len(chosen) >= cap:
             break
         if eligible(qid):
             chosen.append(qid)
 
     # If strict window left room, fill from beginning
-    if len(chosen) < _MAX_PER_DAY:
+    if len(chosen) < cap:
         for qid in pool:
-            if len(chosen) >= _MAX_PER_DAY:
+            if len(chosen) >= cap:
                 break
             if eligible(qid):
                 if qid not in chosen:
                     chosen.append(qid)
 
-    return chosen[:_MAX_PER_DAY]
+    return chosen[:cap]
 
 
 def initial_onboarding_sequence() -> List[str]:

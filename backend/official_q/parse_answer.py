@@ -92,25 +92,37 @@ def parse_answer(q: QItem, user_message: str) -> Dict[str, Any]:
     if not msg:
         return {"kind": q.kind, "empty": True}
 
+    # Always remember the patient's exact reply alongside the parsed value.
+    # The parsed structure (chosen option index/labels) is what scoring uses;
+    # `raw` is what the chat replay shows back to the patient so they see
+    # their own words in the language they typed them, not the catalog's
+    # Hebrew option labels (which can also be wrong when the LLM picks the
+    # closest-but-not-exact option).
     if q.kind == "number":
-        return _parse_number_natural(q, msg)
+        out = _parse_number_natural(q, msg)
+        out.setdefault("raw", msg)
+        return out
 
     if q.kind == "text":
-        return {"kind": "text", "value": msg}
+        return {"kind": "text", "value": msg, "raw": msg}
 
     if q.kind == "single_choice" and q.options:
-        return _parse_single(q, msg)
+        out = _parse_single(q, msg)
+        out["raw"] = msg
+        return out
 
     if q.kind == "yes_no_detail" and q.options:
         base = _parse_single(q, msg)
         idx = int(base.get("index", 0))
-        out = {"kind": "yes_no_detail", "index": idx, "detail": ""}
+        out = {"kind": "yes_no_detail", "index": idx, "detail": "", "raw": msg}
         if idx == 1 and len(msg) > 15:
             out["detail"] = msg
         return out
 
     if q.kind == "multi_choice" and q.options:
-        return _parse_multi(q, msg)
+        out = _parse_multi(q, msg)
+        out["raw"] = msg
+        return out
 
     return {"kind": q.kind, "raw": msg}
 
