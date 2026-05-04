@@ -1,7 +1,10 @@
 import * as React from "react";
 import {
+  Avatar,
+  Box,
   Button,
   Card,
+  CardContent,
   Container,
   TextField,
   Typography,
@@ -10,6 +13,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import { User } from "@phosphor-icons/react";
 import { Link, Redirect } from "react-router-dom";
 import { getUser, updateMyProfile } from "../service/auth";
 import {
@@ -141,7 +145,7 @@ export default function ProfileFormContent({
 
   if (loading) {
     return (
-      <Container maxWidth="sm" sx={containerSx}>
+      <Container maxWidth="lg" sx={containerSx}>
         <Stack alignItems="flex-start" py={4}>
           <CircularProgress sx={{ color: accentPrimary }} />
         </Stack>
@@ -150,76 +154,195 @@ export default function ProfileFormContent({
   }
 
   const backHref = user ? dashboardPathForUser(user) : "/";
-  const themedText = embedded ? alpha(accentPrimary, 0.92) : defaultTheme.text;
-  const themedMutedText = embedded ? alpha(accentPrimary, 0.72) : defaultTheme.textMuted;
-  const formStack = (
-    <Stack spacing={2.5}>
-      <TextField
-        label="Username"
-        fullWidth
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        disabled={saving}
-        helperText={USERNAME_RULES}
-      />
-      <TextField
-        label="Email"
-        type="email"
-        fullWidth
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        disabled={saving}
-        helperText={EMAIL_RULES}
-      />
-      <Typography
-        variant="subtitle1"
-        sx={{ pt: 1, color: "#c62828", fontSize: "1.05rem", fontWeight: 700 }}
+
+  const headingColor = embedded ? "#0f172a" : defaultTheme.text;
+  const mutedColor = embedded ? "#64748b" : defaultTheme.textMuted;
+
+  const profileHeader = (
+    <Stack
+      direction={{ xs: "column", sm: "row" }}
+      spacing={2}
+      alignItems={{ xs: "flex-start", sm: "center" }}
+      sx={{ mb: embedded ? 2 : 1, width: "100%" }}
+    >
+      <Avatar
+        sx={{
+          width: 52,
+          height: 52,
+          bgcolor: accentPrimary,
+          color: "#fff",
+          flexShrink: 0,
+          "& svg": { color: "inherit" },
+        }}
       >
-        Change password
-      </Typography>
-      <TextField
-        label="Current password"
-        type="password"
-        fullWidth
-        value={currentPassword}
-        onChange={(e) => setCurrentPassword(e.target.value)}
-        disabled={saving}
-        autoComplete="current-password"
-      />
-      <TextField
-        label="New password"
-        type="password"
-        fullWidth
-        value={newPassword}
-        onChange={(e) => setNewPassword(e.target.value)}
-        disabled={saving}
-        helperText={PASSWORD_RULES}
-        autoComplete="new-password"
-      />
-      <TextField
-        label="Confirm new password"
-        type="password"
-        fullWidth
-        value={confirmPassword}
-        onChange={(e) => setConfirmPassword(e.target.value)}
-        disabled={saving}
-        autoComplete="new-password"
-      />
-      <Stack direction="row" spacing={2} sx={{ pt: 1 }} flexWrap="wrap">
-        <Button
-          variant="contained"
-          onClick={handleSave}
-          disabled={saving}
-          sx={{ bgcolor: accentPrimary, "&:hover": { bgcolor: accentPrimary, filter: "brightness(0.92)" } }}
+        <User size={28} weight="duotone" />
+      </Avatar>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography
+          variant="h5"
+          component="h1"
+          sx={{
+            fontWeight: 600,
+            fontFamily: "Roboto, sans-serif",
+            color: headingColor,
+            lineHeight: 1.25,
+            mb: 0.5,
+          }}
         >
-          {saving ? "Saving…" : "Save changes"}
-        </Button>
-        {!embedded && (
-          <Button component={Link} to={backHref} disabled={saving}>
-            Back to dashboard
-          </Button>
-        )}
-      </Stack>
+          {title}
+        </Typography>
+        <Typography variant="body2" sx={{ color: mutedColor, maxWidth: 560 }}>
+          Update how you sign in. The same rules apply as when you created your account.
+        </Typography>
+      </Box>
+    </Stack>
+  );
+
+  const cardShellSx = {
+    border: embedded ? `1px solid ${alpha(accentPrimary, 0.14)}` : defaultTheme.border,
+    borderRadius: 2,
+    boxShadow: embedded ? "none" : "0 1px 2px rgba(15, 23, 42, 0.06)",
+    bgcolor: embedded ? alpha(accentPrimary, 0.03) : "#fff",
+    overflow: "hidden",
+  } as const;
+
+  const accountGridSx = {
+    display: "grid",
+    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+    gap: 2.5,
+    alignItems: "flex-start",
+    width: "100%",
+  } as const;
+
+  const passwordGridSx = {
+    display: "grid",
+    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+    gap: 2.5,
+    alignItems: "flex-start",
+    width: "100%",
+  } as const;
+
+  const sectionTitleSx = {
+    fontWeight: 600,
+    fontSize: "1.05rem",
+    color: headingColor,
+    letterSpacing: "-0.01em",
+  } as const;
+
+  const sectionLeadSx = {
+    color: mutedColor,
+    fontSize: "0.875rem",
+    lineHeight: 1.5,
+    mt: 0.5,
+    mb: 2.5,
+    maxWidth: 640,
+  } as const;
+
+  const formBody = (
+    <Stack spacing={2.5} sx={{ width: "100%", maxWidth: embedded ? 720 : 900 }}>
+      <Card elevation={0} sx={cardShellSx}>
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography variant="h6" component="h2" sx={sectionTitleSx}>
+            Account
+          </Typography>
+          <Typography variant="body2" sx={sectionLeadSx}>
+            Your username and email are used to sign in and reach you about your care.
+          </Typography>
+          <Box sx={accountGridSx}>
+            <TextField
+              fullWidth
+              label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={saving}
+              helperText={USERNAME_RULES}
+            />
+            <TextField
+              fullWidth
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={saving}
+              helperText={EMAIL_RULES}
+            />
+          </Box>
+        </CardContent>
+      </Card>
+
+      <Card elevation={0} sx={cardShellSx}>
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography variant="h6" component="h2" sx={sectionTitleSx}>
+            Password
+          </Typography>
+          <Typography variant="body2" sx={sectionLeadSx}>
+            Leave password fields blank to keep your current password. To change it, enter your current password
+            first.
+          </Typography>
+          <Box sx={passwordGridSx}>
+            <Box sx={{ gridColumn: { xs: "auto", md: "1 / -1" } }}>
+              <TextField
+                fullWidth
+                label="Current password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={saving}
+                autoComplete="current-password"
+              />
+            </Box>
+            <TextField
+              fullWidth
+              label="New password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              disabled={saving}
+              helperText={PASSWORD_RULES}
+              autoComplete="new-password"
+            />
+            <TextField
+              fullWidth
+              label="Confirm new password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={saving}
+              autoComplete="new-password"
+            />
+          </Box>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{
+              mt: 3,
+              pt: 3,
+              borderTop: `1px solid ${alpha(embedded ? accentPrimary : "#000", embedded ? 0.12 : 0.08)}`,
+              alignItems: { xs: "stretch", sm: "center" },
+            }}
+            flexWrap="wrap"
+          >
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={saving}
+              sx={{
+                bgcolor: accentPrimary,
+                px: 3,
+                py: 1,
+                "&:hover": { bgcolor: accentPrimary, filter: "brightness(0.92)" },
+              }}
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+            {!embedded && (
+              <Button component={Link} to={backHref} disabled={saving} sx={{ alignSelf: { sm: "center" } }}>
+                Back to dashboard
+              </Button>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
     </Stack>
   );
 
@@ -237,36 +360,35 @@ export default function ProfileFormContent({
           "& .MuiInputBase-input": { color: "#000" },
         }}
       >
+        {profileHeader}
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          <Alert severity="error" sx={{ mb: 0 }} onClose={() => setError(null)}>
             {error}
           </Alert>
         )}
         {success && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+          <Alert severity="success" sx={{ mb: 0 }} onClose={() => setSuccess(null)}>
             {success}
           </Alert>
         )}
-        {formStack}
+        {formBody}
       </Stack>
     ) : (
-      <Container maxWidth="sm" sx={containerSx}>
-        <Typography variant="body2" sx={{ color: defaultTheme.textMuted, mb: 3 }}>
-          Update your username, email, or password. The same rules apply as when you signed up.
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
-            {success}
-          </Alert>
-        )}
-        <Card sx={{ p: 3, border: defaultTheme.border }}>
-          {formStack}
-        </Card>
+      <Container maxWidth="md" sx={containerSx}>
+        <Stack spacing={2.5} sx={{ width: "100%" }}>
+          {profileHeader}
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          {success && (
+            <Alert severity="success" onClose={() => setSuccess(null)}>
+              {success}
+            </Alert>
+          )}
+          {formBody}
+        </Stack>
       </Container>
     )
   );

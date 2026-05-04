@@ -159,7 +159,6 @@ const I18N = {
     dashboard_nav: "Dashboard",
     add_nav: "Add daily metrics",
     statistics_nav: "Statistics",
-    onboarding_nav: "Onboarding",
     device_nav: "Device",
     device_secondary: "Demo – not active. In production, sleep & steps sync from your wearable.",
     my_profile: "My profile",
@@ -182,7 +181,8 @@ const I18N = {
     chat_input_questionnaire: "Type your answer...",
     chat_input_default: (topic) => `Share your ${topic} details...`,
     listening_label: "Listening",
-    profile_via_onboarding: "Profile is filled via the onboarding flow — open Onboarding from the sidebar.",
+    profile_via_onboarding:
+      "Profile is filled during signup onboarding. It is not edited in this conversational view.",
     questionnaire_done: "Thanks — that's all the questions for today. We'll bring a few more in the next days.",
     daily_batch_complete: "You have finished today’s daily questions. That’s all for now — we will offer a fresh batch another day.",
     daily_skipped_today:
@@ -219,7 +219,6 @@ const I18N = {
     dashboard_nav: "לוח בקרה",
     add_nav: "הוספת מדדים יומיים",
     statistics_nav: "סטטיסטיקה",
-    onboarding_nav: "תהליך קליטה",
     device_nav: "מכשיר",
     device_secondary: "הדגמה – לא פעיל. בגרסה החיה נתוני שינה וצעדים מסתנכרנים מהמכשיר הלביש שלך.",
     my_profile: "הפרופיל שלי",
@@ -242,7 +241,8 @@ const I18N = {
     chat_input_questionnaire: "כתוב/י את התשובה שלך...",
     chat_input_default: (topic) => `שתף/י את הפרטים על ${topic}...`,
     listening_label: "מקשיב",
-    profile_via_onboarding: "הפרופיל ממולא דרך מסך הקליטה — פתח/י אותו מסרגל הצד.",
+    profile_via_onboarding:
+      "הפרופיל ממולא במסך הקליטה לאחר ההרשמה. לא ניתן לערוך אותו כאן בשיחה.",
     questionnaire_done: "תודה — אלו כל השאלות להיום. נביא עוד בימים הקרובים.",
     daily_batch_complete: "סיימת את שאלות היום. זה הכול לעת עתה — מחר נציע אצווה חדשה.",
     daily_skipped_today:
@@ -2961,7 +2961,7 @@ export default function PatientDashboard() {
           </Container>
         )}
         {sidebarView === "profile" && (
-          <ProfileFormContent embedded accentPrimary={theme.logoGreen} />
+          <ProfileFormContent embedded accentPrimary={theme.logoGreen} title={t("my_profile")} />
         )}
     </DashboardShell>
   );
