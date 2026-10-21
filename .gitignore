@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Secrets (copy backend/.env.example to backend/.env)
+.env
+.env.*
+!.env.example
+
+# Local SQLite database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / frontend
+node_modules/
+frontend/build/
+npm-debug.log*
+
+# Office lock files (created while a document is open)
+~$*
+
+# OS
+.DS_Store
+Thumbs.db

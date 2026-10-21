@@ -2,12 +2,18 @@
 
 No Docker, no PostgreSQL. Just Python, Node, and a SQLite file.
 
+All commands below are run from the project root (the folder that contains this file).
+
 ---
 
-## 1. Start the backend
+## 1. Configure the backend
+
+Copy `backend/.env.example` to `backend/.env` and fill in `JWT_SECRET_KEY`, `ADMIN_PASSWORD`, and (optionally) `OPENAI_API_KEY`. The comments in the example file explain each value.
+
+## 2. Start the backend
 
 ```bash
-cd C:\Users\USER\Desktop\healthy-visit\healthy-visit-fullstack\backend
+cd backend
 pip install -r requirements.txt
 python server.py
 ```
@@ -17,12 +23,12 @@ API docs: **http://localhost:9999/api/docs**
 
 ---
 
-## 2. Start the frontend
+## 3. Start the frontend
 
 **New terminal:**
 
 ```bash
-cd C:\Users\USER\Desktop\healthy-visit\healthy-visit-fullstack\frontend
+cd frontend
 npm install
 npm start
 ```
@@ -31,11 +37,10 @@ Frontend runs at **http://localhost:3000**
 
 ---
 
-## 3. Log in
+## 4. Log in
 
 - **URL:** http://localhost:3000  
-- **Username:** `admin`  
-- **Password:** `asd123`  
+- Sign in with the admin account you set in `backend/.env` (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 
 You can also **Register** a new user and use that to log in.
 

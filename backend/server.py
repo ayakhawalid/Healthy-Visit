@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -50,21 +51,26 @@ origins = [
 
 
 def _seed_admin():
-    """Create default admin user (admin / asd123) if no superuser exists."""
+    """Create the first admin from ADMIN_USERNAME / ADMIN_EMAIL / ADMIN_PASSWORD if no superuser exists."""
     try:
         rows = conn.execute(Users.select()).fetchall()
         has_superuser = any(len(r) > 3 and r[3] for r in rows) if rows else False
-        if not has_superuser:
-            conn.execute(
-                Users.insert().values(
-                    username="admin",
-                    email="admin@example.com",
-                    is_superuser=True,
-                    is_researcher=False,
-                    password=Hash.bcrypt("asd123"),
-                )
+        if has_superuser:
+            return
+        password = os.getenv("ADMIN_PASSWORD")
+        if not password:
+            print("[healthy-visit] No admin account exists. Set ADMIN_PASSWORD in backend/.env and restart to create one.")
+            return
+        conn.execute(
+            Users.insert().values(
+                username=os.getenv("ADMIN_USERNAME", "admin"),
+                email=os.getenv("ADMIN_EMAIL", "admin@example.com").strip().lower(),
+                is_superuser=True,
+                is_researcher=False,
+                password=Hash.bcrypt(password),
             )
-            conn.commit()
+        )
+        conn.commit()
     except Exception:
         pass
 

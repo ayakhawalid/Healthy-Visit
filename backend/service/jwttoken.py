@@ -1,10 +1,19 @@
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
+
+from dotenv import load_dotenv
 from schemas import TokenData
 from jose import JWTError, jwt
 # from main import TokenData
 
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "JWT_SECRET_KEY is not set. Add it to backend/.env (see backend/.env.example)."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
